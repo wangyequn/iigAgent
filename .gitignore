@@ -19,3 +19,6 @@ scripts/local-env.ps1
 scripts/local-env.cmd
 **/local-env.ps1
 **/local-env.cmd
+
+__pycache__/
+*.pyc
