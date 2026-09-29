@@ -1,0 +1,150 @@
+server:
+  # 鏈満 18080 甯歌鍗犵敤锛岄粯璁ゆ敼 18081
+  port: ${AMP_SERVER_PORT:18081}
+
+spring:
+  application:
+    name: platform-open-api
+  datasource:
+    # 瀹夸富鏈烘槧灏勶細compose 灏嗗鍣?5432 鈫?瀹夸富 15432
+    url: ${AMP_PG_URI:jdbc:postgresql://127.0.0.1:15432/amp}
+    username: ${AMP_PG_USER:amp}
+    password: ${AMP_PG_PASSWORD:amp}
+    driver-class-name: org.postgresql.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+    metrics:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+amp:
+  fs:
+    # remote = PostgreSQL BaseStore锛堝鍓湰鍏变韩宸ヤ綔鍖猴級锛沴ocal = 鏈湴璺緞
+    mode: ${AMP_FS_MODE:remote}
+    isolation-scope: ${AMP_FS_SCOPE:USER}
+  sandbox:
+    enabled: ${AMP_SANDBOX_ENABLED:false}
+    image: ${AMP_SANDBOX_IMAGE:alpine:3.19}
+    docker-bin: ${DOCKER_BIN:}
+    isolation-scope: ${AMP_SANDBOX_SCOPE:USER}
+    timeout-sec: ${AMP_SANDBOX_TIMEOUT_SEC:20}
+    memory-mb: ${AMP_SANDBOX_MEMORY_MB:256}
+    cpus: ${AMP_SANDBOX_CPUS:0.5}
+    network-none: ${AMP_SANDBOX_NETWORK_NONE:true}
+  loki:
+    enabled: ${AMP_LOKI_ENABLED:false}
+    url: ${AMP_LOKI_URL:http://127.0.0.1:3100}
+    username: ${AMP_LOKI_USERNAME:}
+    password: ${AMP_LOKI_PASSWORD:}
+    app: ${AMP_LOKI_APP:platform-open-api}
+    local-log-file: ${AMP_LOCAL_LOG_FILE:logs/amp-open-api-18081.log}
+  otel:
+    enabled: ${AMP_OTEL_ENABLED:true}
+    endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:}
+    service-name: ${OTEL_SERVICE_NAME:platform-open-api}
+  nacos:
+    enabled: ${AMP_NACOS_ENABLED:false}
+    server-addr: ${AMP_NACOS_SERVER:127.0.0.1:8848}
+    namespace: ${AMP_NACOS_NAMESPACE:}
+    group: ${AMP_NACOS_GROUP:DEFAULT_GROUP}
+    data-id: ${AMP_NACOS_DATA_ID:amp-platform.properties}
+    username: ${AMP_NACOS_USERNAME:}
+    password: ${AMP_NACOS_PASSWORD:}
+  external:
+    heartbeat-timeout-sec: ${AMP_EXTERNAL_HB_TIMEOUT_SEC:90}
+  ops:
+    rate-limit-enabled: ${AMP_RATE_LIMIT_ENABLED:true}
+    rate-limit-per-minute: ${AMP_RATE_LIMIT_PER_MINUTE:120}
+    token-chars-per-token: ${AMP_TOKEN_CHARS_PER_TOKEN:3}
+    token-cost-per-1k: ${AMP_TOKEN_COST_PER_1K:2}
+  auth:
+    enabled: ${AMP_AUTH_ENABLED:true}
+    keys:
+      # 涓氬姟渚?Open API锛堝璇濈瓑锛夛紱涓嶈兘璋?/api/v1/admin/**
+      - key: ${AMP_API_KEY:s0-demo-key}
+        tenant-id: ${AMP_TENANT_ID:acme}
+        agents: [demo]
+        scopes: [open]
+      # 绠＄悊鍙?/ 杩愮淮锛堝彲鍚屾椂璋?Open API锛夛紱鐢熶骇璇风嫭绔嬭疆鎹?      - key: ${AMP_ADMIN_API_KEY:s0-admin-key}
+        tenant-id: ${AMP_TENANT_ID:acme}
+        agents: [demo]
+        scopes: [open, admin]
+  agent:
+    name: demo
+    model-id: ${AMP_MODEL_ID:deepseek:deepseek-flash}
+    sysPrompt: "浣犳槸涓€涓畝娲佺殑 AI 涓彴婕旂ず鍔╂墜锛岀敤涓枃鍥炵瓟銆?
+    workspace: ${AMP_WORKSPACE:.agentscope/workspace}
+    redis-uri: ${AMP_REDIS_URI:redis://127.0.0.1:6379}
+    state-key-prefix: "amp:demo:session:"
+    require-session-context: true
+    # AgentScope 杩愯鏃讹細0=鎸夋ā鍨嬬獥鍙ｅ姩鎬佽Е鍙戝帇缂╋紙妯″瀷鏈笂鎶ョ獥鍙ｆ椂鎸?160k 鍏滃簳锛?    compaction-trigger-tokens: ${AMP_COMPACTION_TRIGGER_TOKENS:0}
+    # 涓绘ā鍨嬪け璐ユ椂鐨勫洖閫€妯″瀷锛堝 deepseek:deepseek-chat锛夛紱鐣欑┖涓嶅洖閫€
+    fallback-model-id: ${AMP_FALLBACK_MODEL_ID:}
+    # 妯″瀷璋冪敤閲嶈瘯娆℃暟锛坔arness 榛樿 3锛?    max-retries: ${AMP_MODEL_MAX_RETRIES:3}
+    # workspace 涓婁笅鏂囨敞鍏ラ绠?token锛坔arness 榛樿 8000锛?    max-context-tokens: ${AMP_MAX_CONTEXT_TOKENS:8000}
+    # AgentScope 2.0 鑳藉姏寮€鍏筹紙榛樿淇濇寔鏃㈡湁琛屼负锛?    enable-plan-mode: ${AMP_ENABLE_PLAN_MODE:false}
+    enable-task-list: ${AMP_ENABLE_TASK_LIST:false}
+    enable-meta-tool: ${AMP_ENABLE_META_TOOL:false}
+    # 寮傛宸ュ叿鍗歌浇锛氬伐鍏锋墽琛岃秴杩囪姣鏁拌浆鍚庡彴锛堝崰浣嶈繑鍥?+ 瀹屾垚鍚庡敜閱掓仮澶嶏級锛?=鍏抽棴
+    async-tool-timeout-ms: ${AMP_ASYNC_TOOL_TIMEOUT_MS:0}
+    # 瀵硅瘽鍘嬬缉锛圝ava 瀹樻柟 quickstart 鎺ㄨ崘鏄惧紡閰嶇疆锛涢粯璁?30 鏉¤Е鍙?/ 淇濈暀鏈€杩?10 鏉★級
+    compaction-trigger-messages: ${AMP_COMPACTION_TRIGGER_MESSAGES:30}
+    compaction-keep-messages: ${AMP_COMPACTION_KEEP_MESSAGES:10}
+    # 澶у伐鍏风粨鏋滃嵏杞斤紙>80K 瀛楃钀界洏锛屽彧鐣欓灏炬憳瑕?+ read_file 璺緞鎻愮ず锛?    tool-result-eviction: ${AMP_TOOL_RESULT_EVICTION:true}
+  # 宸ュ叿闈㈤粯璁ゆ敹绱э細deny=榛戝悕鍗曪紱allow=鐧藉悕鍗曪紙鐢熶骇鎺ㄨ崘 allow + query_orders/place_order/knowledge_search锛?  tools:
+    mode: ${AMP_TOOLS_MODE:deny}
+    # allow: [query_orders, place_order, knowledge_search]
+    extra-deny: []
+    enable-agent-spawn: ${AMP_TOOLS_AGENT_SPAWN:false}
+    enable-shell: ${AMP_TOOLS_SHELL:false}
+    enable-filesystem: ${AMP_TOOLS_FS:false}
+  # RAG Embedding锛歨ash=鏈湴锛沨ttp=OpenAI 鍏煎 /v1/embeddings锛堝け璐ュ洖閫€ hash锛?  rag:
+    provider: ${AMP_RAG_PROVIDER:hash}
+    http-base-url: ${AMP_RAG_BASE_URL:}
+    http-api-key: ${AMP_RAG_API_KEY:}
+    http-model: ${AMP_RAG_MODEL:text-embedding-3-small}
+    http-dimensions: ${AMP_RAG_DIMS:}
+    # Dify 知识库（Dataset API）：enabled=true 时入库/检索走 Dify，否则 Simple+PG
+    dify:
+      enabled: ${AMP_DIFY_KB_ENABLED:true}
+      base-url: ${AMP_DIFY_KB_BASE_URL:http://192.168.31.201/v1}
+      api-key: ${AMP_DIFY_KB_API_KEY:}
+      dataset-id: ${AMP_DIFY_KB_DATASET_ID:}
+      dataset-name: ${AMP_DIFY_KB_DATASET_NAME:amp-knowledge}
+      search-method: ${AMP_DIFY_KB_SEARCH:hybrid_search}
+      reranking-enable: ${AMP_DIFY_KB_RERANK:false}
+      score-threshold-enabled: ${AMP_DIFY_KB_SCORE_ON:false}
+      score-threshold: ${AMP_DIFY_KB_SCORE:0.5}
+  # 鎶€鑳界伆搴︼細鐜 + 鎸?userId 绋冲畾鍝堝笇鐧惧垎姣?  skill:
+    canary:
+      environment: ${AMP_SKILL_ENV:}
+      default-percent: ${AMP_SKILL_ROLLOUT:100}
+      # percents: { order-style: 20 }
+      allowed-environments: ${AMP_SKILL_ENVS:}
+  runtime:
+    max-instances: ${AMP_RUNTIME_MAX_INSTANCES:50}
+    drain-timeout-ms: ${AMP_RUNTIME_DRAIN_TIMEOUT_MS:120000}
+    drain-sweep-ms: ${AMP_RUNTIME_DRAIN_SWEEP_MS:5000}
+  sse:
+    replay-ttl-ms: ${AMP_SSE_REPLAY_TTL_MS:30000}
+  # 澶氬壇鏈繍琛屾椂浜嬩欢锛坮elease 鍒囨祦 / 瀹炰緥椹遍€愶級璧?Redis pub/sub
+  events:
+    enabled: ${AMP_EVENTS_ENABLED:true}
+
+logging:
+  level:
+    com.sinosoft.amp: INFO
+    io.agentscope: INFO

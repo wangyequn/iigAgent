@@ -1,0 +1,88 @@
+services:
+  redis:
+    # 本机已有 redis-server:6379 时，Compose 不必再起 Redis；
+    # 若要用 Docker Redis，请改为 host 端口 16379，并设 AMP_REDIS_URI=redis://127.0.0.1:16379
+    # 国内镜像：
+    #   docker pull docker.m.daocloud.io/library/redis:7-alpine
+    #   docker tag docker.m.daocloud.io/library/redis:7-alpine redis:7-alpine
+    image: redis:7-alpine
+    pull_policy: missing
+    ports:
+      - "16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    # 国内镜像：
+    #   docker pull docker.m.daocloud.io/library/postgres:16-alpine
+    #   docker tag docker.m.daocloud.io/library/postgres:16-alpine postgres:16-alpine
+    # 宿主机 5432 可能被占，映射到 15432
+    image: postgres:16-alpine
+    pull_policy: missing
+    environment:
+      POSTGRES_DB: amp
+      POSTGRES_USER: amp
+      POSTGRES_PASSWORD: amp
+    ports:
+      - "15432:5432"
+    volumes:
+      - amp-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U amp -d amp"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # S7/T8 可选：Loki 日志检索（默认注释；开启后设 AMP_LOKI_ENABLED=true / AMP_LOKI_URL）
+  # loki:
+  #   image: grafana/loki:2.9.4
+  #   ports:
+  #     - "3100:3100"
+  #   command: -config.file=/etc/loki/local-config.yaml
+
+  # S7/T2 可选：Nacos 配置中心（默认注释；开启后设 AMP_NACOS_ENABLED=true）
+  # nacos:
+  #   image: nacos/nacos-server:v2.3.2
+  #   environment:
+  #     MODE: standalone
+  #     JVM_XMS: 256m
+  #     JVM_XMX: 512m
+  #   ports:
+  #     - "8848:8848"
+  #     - "9848:9848"
+
+  open-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # 容器内连 compose redis；若宿主机已有 Redis，可改 redis://host.docker.internal:6379
+      AMP_REDIS_URI: redis://redis:6379
+      AMP_PG_URI: jdbc:postgresql://postgres:5432/amp
+      AMP_PG_USER: amp
+      AMP_PG_PASSWORD: amp
+      AMP_SERVER_PORT: "8080"
+      AMP_MODEL_ID: ${AMP_MODEL_ID:-deepseek:deepseek-flash}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AMP_WORKSPACE: /data/workspace
+      AMP_NACOS_ENABLED: ${AMP_NACOS_ENABLED:-false}
+      AMP_NACOS_SERVER: ${AMP_NACOS_SERVER:-nacos:8848}
+      AMP_LOKI_ENABLED: ${AMP_LOKI_ENABLED:-false}
+      AMP_LOKI_URL: ${AMP_LOKI_URL:-http://loki:3100}
+    ports:
+      # 宿主机 18080 可能被占 → 18081
+      - "18081:8080"
+    volumes:
+      - amp-workspace:/data/workspace
+
+volumes:
+  amp-workspace:
+  amp-pg:

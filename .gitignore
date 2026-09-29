@@ -1,0 +1,21 @@
+target/
+*.class
+*.jar
+*.war
+.idea/
+*.iml
+.vscode/
+.DS_Store
+.agentscope/
+*.log
+*.dumpstream
+.env
+.env.local
+node_modules/
+platform-console-ui/dist/
+logs/
+# local secrets — never commit
+scripts/local-env.ps1
+scripts/local-env.cmd
+**/local-env.ps1
+**/local-env.cmd
