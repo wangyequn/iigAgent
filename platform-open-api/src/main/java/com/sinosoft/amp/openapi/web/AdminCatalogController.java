@@ -9,7 +9,9 @@ import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -47,6 +49,26 @@ public class AdminCatalogController {
         String tenant = AuthContext.requireTenantId();
         AgentRecord agent = catalogRuntime.createAgent(tenant, request.agentId(), request.name());
         return agentBody(agent, null);
+    }
+
+    @PutMapping("/agents/{agentId}")
+    public Map<String, Object> updateAgent(
+            @PathVariable String agentId,
+            @RequestBody UpdateAgentRequest request) {
+        String tenant = AuthContext.requireTenantId();
+        AuthContext.requireAgent(agentId);
+        AgentRecord agent = catalogRuntime.updateAgent(tenant, agentId, request.name(), request.enabled());
+        instanceCache.evictTenant(tenant);
+        return agentBody(agent, null);
+    }
+
+    @DeleteMapping("/agents/{agentId}")
+    public Map<String, Object> deleteAgent(@PathVariable String agentId) {
+        String tenant = AuthContext.requireTenantId();
+        AuthContext.requireAgent(agentId);
+        catalogRuntime.deleteAgent(tenant, agentId);
+        instanceCache.evictTenant(tenant);
+        return Map.of("deleted", true, "agentId", agentId);
     }
 
     @PostMapping("/agents/{agentId}/versions")
@@ -155,6 +177,9 @@ public class AdminCatalogController {
             return attrs.getRequest().getHeader("X-Request-Id");
         }
         return UUID.randomUUID().toString();
+    }
+
+    public record UpdateAgentRequest(String name, Boolean enabled) {
     }
 
     public record CreateAgentRequest(

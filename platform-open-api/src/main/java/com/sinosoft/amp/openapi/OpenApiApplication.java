@@ -4,7 +4,9 @@ import com.sinosoft.amp.openapi.agent.AgentProperties;
 import com.sinosoft.amp.openapi.agent.ToolPolicyProperties;
 import com.sinosoft.amp.openapi.knowledge.DifyProperties;
 import com.sinosoft.amp.openapi.knowledge.EmbeddingProperties;
+import com.sinosoft.amp.openapi.memory.Mem0Properties;
 import com.sinosoft.amp.openapi.skill.SkillCanaryProperties;
+import com.sinosoft.amp.openapi.ops.NacosAiProperties;
 import com.sinosoft.amp.openapi.ops.NacosProperties;
 import com.sinosoft.amp.openapi.ops.OpsProperties;
 import com.sinosoft.amp.openapi.ops.OtelProperties;
@@ -21,7 +23,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableConfigurationProperties({
         AuthProperties.class, AgentProperties.class, ToolPolicyProperties.class,
         EmbeddingProperties.class, DifyProperties.class, SkillCanaryProperties.class,
-        OpsProperties.class, NacosProperties.class, OtelProperties.class,
+        Mem0Properties.class,
+        OpsProperties.class, NacosProperties.class, NacosAiProperties.class, OtelProperties.class,
         LokiProperties.class, SandboxProperties.class, FsProperties.class})
 @EnableScheduling
 public class OpenApiApplication {

@@ -36,7 +36,7 @@ const historyLoading = ref(false)
 const toolTimeline = ref([])
 const abortFn = ref(null)
 const recentSessions = ref(loadRecentSessions())
-const suggestions = ['查一下今天的订单', '总结昨日异常订单', '帮我下单并确认', '介绍一下退货政策']
+const suggestions = ['介绍一下平台能力', '有哪些 Agent？', '看看系统状态', '帮我打开知识库']
 
 const readyLabel = computed(() => {
   const r = store.ready

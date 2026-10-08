@@ -1,198 +1,253 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch, markRaw } from 'vue'
 import { useRoute } from 'vue-router'
+import { VueFlow, useVueFlow, Position, Handle } from '@vue-flow/core'
+import { Background } from '@vue-flow/background'
+import { Controls } from '@vue-flow/controls'
+import { MiniMap } from '@vue-flow/minimap'
+import '@vue-flow/core/dist/style.css'
+import '@vue-flow/controls/dist/style.css'
+import '@vue-flow/minimap/dist/style.css'
+
 import PageHeader from '@/components/ui/PageHeader.vue'
+import FlowNode from '@/components/workflow/FlowNode.vue'
 import { upsertWorkflow, publishWorkflowRevision, listWorkflows } from '@/api'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 
 const route = useRoute()
 const workflowId = route.params.workflowId
 
 const name = ref('演示流程')
-const zoom = ref(1)
-const selectedId = ref(null)
+const description = ref('')
 const dirty = ref(false)
 const saving = ref(false)
 const jsonOpen = ref(false)
+const jsonDraft = ref('')
+const selectedId = ref(null)
 
-const nodeTypes = {
-  ECHO: { label: 'ECHO', color: '#64748b', desc: '回显输入，调试用' },
-  AGENT: { label: 'AGENT', color: '#4f46e5', desc: '调用 Agent 对话' },
-  HUMAN_GATE: { label: 'HUMAN_GATE', color: '#d97706', desc: '人工门禁确认' },
-}
-
-const state = reactive({
-  nodes: [
-    {
-      id: 's1',
-      type: 'ECHO',
-      x: 80,
-      y: 160,
-      data: { input: '准备排查', next: 'gate' },
-    },
-    {
-      id: 'gate',
-      type: 'HUMAN_GATE',
-      x: 340,
-      y: 160,
-      data: { prompt: '是否继续调用 Agent？', next: 's2' },
-    },
-    {
-      id: 's2',
-      type: 'AGENT',
-      x: 600,
-      y: 160,
-      data: { agentId: 'demo', input: '总结今日订单异常', next: '' },
-    },
-  ],
+const nodeTypes = markRaw({
+  echo: FlowNode,
+  agent: FlowNode,
+  gate: FlowNode,
 })
 
-const nodes = computed(() => state.nodes)
-const selected = computed(() => state.nodes.find((n) => n.id === selectedId.value))
+const typeMeta = {
+  ECHO: { key: 'echo', color: '#64748b', label: 'ECHO', desc: '回显输入，调试用' },
+  AGENT: { key: 'agent', color: '#4f46e5', label: 'AGENT', desc: '调用 Agent 对话' },
+  HUMAN_GATE: { key: 'gate', color: '#d97706', label: 'HUMAN_GATE', desc: '人工门禁确认' },
+}
 
-const edges = computed(() => {
-  const list = []
-  for (const n of state.nodes) {
-    const next = n.data?.next
-    if (!next) continue
-    const target = state.nodes.find((t) => t.id === next)
-    if (!target) continue
-    list.push({ from: n, to: target })
-  }
-  return list
+const {
+  nodes,
+  edges,
+  addNodes,
+  addEdges,
+  removeNodes,
+  findNode,
+  setNodes,
+  setEdges,
+  onConnect,
+  onNodeClick,
+  onPaneReady,
+  fitView,
+} = useVueFlow({
+  nodes: [],
+  edges: [],
+  defaultEdgeOptions: {
+    type: 'smoothstep',
+    animated: false,
+    style: { stroke: '#94a3b8', strokeWidth: 1.8 },
+  },
 })
 
-function nodeSize(n) {
-  return { w: 180, h: 72 }
+const selected = computed(() => {
+  if (!selectedId.value) return null
+  return nodes.value.find((n) => n.id === selectedId.value) || findNode(selectedId.value)
+})
+
+const selectedData = computed(() => selected.value?.data || null)
+
+function slugType(t) {
+  return typeMeta[t]?.key || 'echo'
 }
 
-function edgePath(e) {
-  const a = nodeSize(e.from)
-  const b = nodeSize(e.to)
-  const x1 = e.from.x + a.w
-  const y1 = e.from.y + a.h / 2
-  const x2 = e.to.x
-  const y2 = e.to.y + b.h / 2
-  const dx = Math.max(40, Math.abs(x2 - x1) * 0.5)
-  return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`
-}
-
-let drag = null
-
-function onNodeDown(e, n) {
-  e.stopPropagation()
-  selectedId.value = n.id
-  drag = {
-    id: n.id,
-    startX: e.clientX,
-    startY: e.clientY,
-    origX: n.x,
-    origY: n.y,
+function stepToNode(step, index) {
+  return {
+    id: step.id,
+    type: slugType(step.type),
+    position: { x: 80 + (index % 3) * 260, y: 100 + Math.floor(index / 3) * 140 },
+    data: {
+      type: step.type || 'ECHO',
+      input: step.input ?? '',
+      prompt: step.prompt ?? '',
+      agentId: step.agentId ?? '',
+      next: step.next ?? '',
+    },
   }
-  window.addEventListener('mousemove', onMove)
-  window.addEventListener('mouseup', onUp)
 }
 
-function onMove(e) {
-  if (!drag) return
-  const n = state.nodes.find((x) => x.id === drag.id)
-  if (!n) return
-  n.x = Math.max(0, drag.origX + (e.clientX - drag.startX) / zoom.value)
-  n.y = Math.max(0, drag.origY + (e.clientY - drag.startY) / zoom.value)
-  dirty.value = true
+function stepsToGraph(steps) {
+  const ns = (steps || []).map(stepToNode)
+  const es = []
+  for (const s of steps || []) {
+    if (s.next && (steps || []).some((t) => t.id === s.next)) {
+      es.push({
+        id: `e-${s.id}-${s.next}`,
+        source: s.id,
+        target: s.next,
+        type: 'smoothstep',
+        style: { stroke: '#94a3b8', strokeWidth: 1.8 },
+      })
+    }
+  }
+  return { ns, es }
 }
 
-function onUp() {
-  drag = null
-  window.removeEventListener('mousemove', onMove)
-  window.removeEventListener('mouseup', onUp)
-}
-
-function addNode(type) {
-  const id = `${type.toLowerCase()}_${Date.now().toString(36).slice(-4)}`
-  state.nodes.push({
-    id,
-    type,
-    x: 120 + (state.nodes.length % 3) * 220,
-    y: 80 + Math.floor(state.nodes.length / 3) * 120,
-    data:
-      type === 'AGENT'
-        ? { agentId: 'demo', input: '新任务', next: '' }
-        : type === 'HUMAN_GATE'
-          ? { prompt: '请确认', next: '' }
-          : { input: 'echo', next: '' },
+function graphToSteps() {
+  const out = nodes.value.map((n) => {
+    const d = n.data || {}
+    const step = { id: n.id, type: d.type || 'ECHO' }
+    if (step.type === 'AGENT') {
+      step.agentId = d.agentId || 'demo'
+      step.input = d.input || ''
+    } else if (step.type === 'HUMAN_GATE') {
+      step.prompt = d.prompt || '请确认'
+    } else {
+      step.input = d.input || ''
+    }
+    const outEdge = edges.value.find((e) => e.source === n.id)
+    step.next = outEdge?.target || ''
+    return step
   })
+  return out
+}
+
+const definitionJson = computed(() =>
+  JSON.stringify({ steps: graphToSteps() }, null, 2),
+)
+
+watch(
+  definitionJson,
+  (v) => {
+    if (!jsonOpen.value) jsonDraft.value = v
+  },
+  { immediate: true },
+)
+
+function addNodeByType(typeName) {
+  const id = `${typeName.toLowerCase()}_${Date.now().toString(36).slice(-4)}`
+  const count = nodes.value.length
+  const data = {
+    type: typeName,
+    input: typeName === 'ECHO' ? 'echo' : typeName === 'AGENT' ? '新任务' : '',
+    prompt: typeName === 'HUMAN_GATE' ? '请确认' : '',
+    agentId: typeName === 'AGENT' ? 'demo' : '',
+    next: '',
+  }
+  addNodes([
+    {
+      id,
+      type: slugType(typeName),
+      position: { x: 120 + (count % 3) * 240, y: 80 + Math.floor(count / 3) * 140 },
+      data,
+    },
+  ])
   selectedId.value = id
   dirty.value = true
 }
 
+onConnect((params) => {
+  addEdges([
+    {
+      id: `e-${params.source}-${params.target}`,
+      source: params.source,
+      target: params.target,
+      type: 'smoothstep',
+      style: { stroke: '#94a3b8', strokeWidth: 1.8 },
+    },
+  ])
+  // 单出口：source 已有边则替换
+  const extra = edges.value.filter(
+    (e) => e.source === params.source && e.target !== params.target,
+  )
+  if (extra.length) {
+    // keep only latest edge from source
+    for (const e of extra) {
+      edges.value = edges.value.filter((x) => x.id !== e.id)
+    }
+  }
+  dirty.value = true
+})
+
+onNodeClick(({ node }) => {
+  selectedId.value = node.id
+})
+
 function removeSelected() {
   if (!selectedId.value) return
-  state.nodes = state.nodes.filter((n) => n.id !== selectedId.value)
-  for (const n of state.nodes) {
-    if (n.data?.next === selectedId.value) n.data.next = ''
-  }
+  removeNodes([selectedId.value])
   selectedId.value = null
   dirty.value = true
 }
 
-function setNext(n, next) {
-  n.data.next = next
+function onFieldChange() {
   dirty.value = true
 }
-
-const definitionJson = computed(() =>
-  JSON.stringify(
-    {
-      steps: state.nodes.map((n) => ({
-        id: n.id,
-        type: n.type,
-        ...n.data,
-      })),
-    },
-    null,
-    2,
-  ),
-)
 
 function loadFromJson() {
   try {
     const obj = JSON.parse(jsonDraft.value)
-    const steps = obj.steps || []
-    state.nodes = steps.map((s, i) => ({
-      id: s.id,
-      type: s.type,
-      x: 80 + (i % 3) * 260,
-      y: 120 + Math.floor(i / 3) * 120,
-      data: {
-        input: s.input ?? '',
-        prompt: s.prompt ?? '',
-        agentId: s.agentId ?? '',
-        next: s.next ?? '',
-      },
-    }))
+    const { ns, es } = stepsToGraph(obj.steps || [])
+    setNodes(ns)
+    setEdges(es)
     jsonOpen.value = false
     dirty.value = true
+    requestAnimationFrame(() => fitView?.())
     ElMessage.success('已从 JSON 同步画布')
   } catch {
     ElMessage.error('JSON 不合法')
   }
 }
 
-const jsonDraft = ref(definitionJson.value)
-
-watch(
-  () => definitionJson.value,
-  (v) => {
-    if (!jsonOpen.value) jsonDraft.value = v
-  },
-)
+async function loadWorkflow() {
+  try {
+    const data = await listWorkflows()
+    const list = data.workflows || data.items || (Array.isArray(data) ? data : [])
+    const found = list.find((w) => (w.workflowId || w.id) === workflowId)
+    if (found?.name) name.value = found.name
+    description.value = found?.description || ''
+    const def = found?.definition || found?.definitionJson
+    if (def) {
+      const obj = typeof def === 'string' ? JSON.parse(def) : def
+      if (obj.steps?.length) {
+        const { ns, es } = stepsToGraph(obj.steps)
+        setNodes(ns)
+        setEdges(es)
+        requestAnimationFrame(() => fitView?.())
+      }
+    }
+  } catch {
+    /* default demo graph */
+    const demo = {
+      steps: [
+        { id: 's1', type: 'ECHO', input: '准备排查', next: 'gate' },
+        { id: 'gate', type: 'HUMAN_GATE', prompt: '是否继续调用 Agent？', next: 's2' },
+        { id: 's2', type: 'AGENT', agentId: 'demo', input: '总结今日运行摘要', next: '' },
+      ],
+    }
+    const { ns, es } = stepsToGraph(demo.steps)
+    setNodes(ns)
+    setEdges(es)
+    requestAnimationFrame(() => fitView?.())
+  }
+}
 
 async function save() {
   saving.value = true
   try {
     await upsertWorkflow(workflowId, {
       name: name.value,
+      description: description.value,
       definition: JSON.parse(definitionJson.value),
     })
     dirty.value = false
@@ -214,44 +269,18 @@ async function publish() {
   }
 }
 
-onMounted(async () => {
-  try {
-    const data = await listWorkflows()
-    const list = data.workflows || data.items || []
-    const found = list.find((w) => (w.workflowId || w.id) === workflowId)
-    if (found?.name) name.value = found.name
-    const def = found?.definition || found?.definitionJson
-    if (def) {
-      const obj = typeof def === 'string' ? JSON.parse(def) : def
-      if (obj.steps?.length) {
-        state.nodes = obj.steps.map((s, i) => ({
-          id: s.id,
-          type: s.type,
-          x: 80 + (i % 3) * 260,
-          y: 120 + Math.floor(i / 3) * 120,
-          data: {
-            input: s.input ?? '',
-            prompt: s.prompt ?? '',
-            agentId: s.agentId ?? '',
-            next: s.next ?? '',
-          },
-        }))
-      }
-    }
-  } catch {
-    /* keep default demo graph */
-  }
-})
+onMounted(loadWorkflow)
 </script>
 
 <template>
   <PageHeader
     :title="`Workflow 编辑器 · ${workflowId}`"
-    desc="拖拽节点、连线下一步、配置属性。支持 ECHO / AGENT / HUMAN_GATE。"
+    back="/workflows"
+    back-label="Workflow 列表"
   >
     <template #actions>
       <el-tag v-if="dirty" type="warning" size="small" effect="light">未保存</el-tag>
-      <el-button @click="jsonOpen = true">JSON 模式</el-button>
+      <el-button @click="jsonOpen = true">JSON</el-button>
       <el-button :loading="saving" @click="save">保存</el-button>
       <el-button type="primary" :loading="saving" @click="publish">保存并发布</el-button>
     </template>
@@ -261,11 +290,11 @@ onMounted(async () => {
     <aside class="palette">
       <div class="t-faint" style="margin-bottom:8px">节点库</div>
       <button
-        v-for="(meta, type) in nodeTypes"
-        :key="type"
+        v-for="(meta, typeName) in typeMeta"
+        :key="typeName"
         type="button"
         class="palette-item"
-        @click="addNode(type)"
+        @click="addNodeByType(typeName)"
       >
         <span class="dot" :style="{ background: meta.color }" />
         <div>
@@ -273,109 +302,52 @@ onMounted(async () => {
           <div class="t-faint">{{ meta.desc }}</div>
         </div>
       </button>
-
-      <div class="palette-divider" />
-      <div class="t-faint" style="margin-bottom:8px">画布</div>
-      <div class="zoom-row">
-        <el-button size="small" @click="zoom = Math.max(0.5, zoom - 0.1)">−</el-button>
-        <span class="t-faint">{{ Math.round(zoom * 100) }}%</span>
-        <el-button size="small" @click="zoom = Math.min(1.6, zoom + 0.1)">+</el-button>
+      <div class="hint t-faint">
+        点击添加节点；从右侧圆点拖到目标节点左侧圆点可连线。单节点仅保留一条出边。
       </div>
-      <el-button
-        v-if="selected"
-        size="small"
-        type="danger"
-        plain
-        style="width:100%;margin-top:10px"
-        @click="removeSelected"
-      >
-        删除节点
-      </el-button>
     </aside>
 
-    <div class="canvas-wrap" @click="selectedId = null">
-      <div class="canvas" :style="{ transform: `scale(${zoom})` }">
-        <svg class="edges" width="100%" height="100%">
-          <defs>
-            <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-              <path d="M0,0 L8,4 L0,8 Z" fill="#94a3b8" />
-            </marker>
-          </defs>
-          <path
-            v-for="(e, i) in edges"
-            :key="i"
-            :d="edgePath(e)"
-            fill="none"
-            stroke="#94a3b8"
-            stroke-width="1.8"
-            marker-end="url(#arrow)"
-          />
-        </svg>
-
-        <div
-          v-for="n in nodes"
-          :key="n.id"
-          class="node"
-          :class="{ active: selectedId === n.id }"
-          :style="{
-            left: n.x + 'px',
-            top: n.y + 'px',
-            borderColor: nodeTypes[n.type]?.color,
-          }"
-          @mousedown="onNodeDown($event, n)"
-        >
-          <div class="node-type mono" :style="{ color: nodeTypes[n.type]?.color }">
-            {{ nodeTypes[n.type]?.label }}
-          </div>
-          <div class="node-id mono">{{ n.id }}</div>
-          <div class="node-preview t-faint">
-            {{ n.type === 'AGENT' ? n.data.agentId : n.type === 'HUMAN_GATE' ? n.data.prompt : n.data.input }}
-          </div>
-          <div class="port out" title="下一步" />
-        </div>
-      </div>
+    <div class="canvas-wrap">
+      <VueFlow
+        :node-types="nodeTypes"
+        :default-edge-options="{ type: 'smoothstep' }"
+        fit-view-on-init
+        :min-zoom="0.2"
+        :max-zoom="2"
+      >
+        <Background pattern-color="#c7d2fe" :gap="18" />
+        <Controls />
+        <MiniMap pannable zoomable />
+      </VueFlow>
     </div>
 
     <aside class="inspector">
       <div class="t-faint" style="margin-bottom:10px">属性</div>
-      <template v-if="selected">
+      <template v-if="selected && selectedData">
         <el-form label-position="top" size="small">
           <el-form-item label="节点 ID">
-            <el-input v-model="selected.id" disabled />
+            <el-input :model-value="selectedId" disabled />
           </el-form-item>
           <el-form-item label="类型">
-            <el-input :model-value="selected.type" disabled />
+            <el-input :model-value="selectedData.type" disabled />
           </el-form-item>
-          <el-form-item v-if="selected.type === 'ECHO'" label="input">
-            <el-input v-model="selected.data.input" @input="dirty = true" />
+          <el-form-item v-if="selectedData.type === 'ECHO'" label="input">
+            <el-input v-model="selectedData.input" @input="onFieldChange" />
           </el-form-item>
-          <el-form-item v-if="selected.type === 'HUMAN_GATE'" label="prompt">
-            <el-input v-model="selected.data.prompt" type="textarea" :rows="3" @input="dirty = true" />
+          <el-form-item v-if="selectedData.type === 'HUMAN_GATE'" label="prompt">
+            <el-input v-model="selectedData.prompt" type="textarea" :rows="3" @input="onFieldChange" />
           </el-form-item>
-          <template v-if="selected.type === 'AGENT'">
+          <template v-if="selectedData.type === 'AGENT'">
             <el-form-item label="agentId">
-              <el-input v-model="selected.data.agentId" @input="dirty = true" />
+              <el-input v-model="selectedData.agentId" @input="onFieldChange" />
             </el-form-item>
             <el-form-item label="input">
-              <el-input v-model="selected.data.input" type="textarea" :rows="3" @input="dirty = true" />
+              <el-input v-model="selectedData.input" type="textarea" :rows="3" @input="onFieldChange" />
             </el-form-item>
           </template>
-          <el-form-item label="下一步节点">
-            <el-select
-              :model-value="selected.data.next || ''"
-              clearable
-              placeholder="无（结束）"
-              style="width:100%"
-              @change="(v) => setNext(selected, v || '')"
-            >
-              <el-option
-                v-for="n in nodes.filter((x) => x.id !== selected.id)"
-                :key="n.id"
-                :label="`${n.id} · ${n.type}`"
-                :value="n.id"
-              />
-            </el-select>
-          </el-form-item>
+          <el-button size="small" type="danger" plain style="width:100%" @click="removeSelected">
+            删除节点
+          </el-button>
         </el-form>
       </template>
       <el-empty v-else description="点击画布中的节点进行配置" :image-size="64" />
@@ -433,78 +405,15 @@ onMounted(async () => {
   margin-top: 5px;
   flex-shrink: 0;
 }
-.palette-divider {
-  height: 1px;
-  background: var(--line);
-  margin: 14px 0;
+.hint {
+  margin-top: 12px;
+  line-height: 1.5;
 }
-.zoom-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .canvas-wrap {
   position: relative;
-  overflow: auto;
-  background:
-    radial-gradient(circle, var(--line) 1px, transparent 1px) 0 0 / 18px 18px,
-    var(--bg-app);
   min-height: 560px;
-}
-.canvas {
-  position: relative;
-  width: 1100px;
-  height: 640px;
-  transform-origin: 0 0;
-}
-.edges {
-  position: absolute;
-  inset: 0;
-  overflow: visible;
-  pointer-events: none;
-}
-.node {
-  position: absolute;
-  width: 180px;
-  height: 72px;
-  border-radius: 12px;
-  border: 1.5px solid var(--line);
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
-  padding: 10px 12px;
-  cursor: grab;
-  user-select: none;
-}
-.node.active {
-  box-shadow: var(--shadow-focus), var(--shadow-md);
-  border-color: var(--brand);
-}
-.node-type {
-  font-size: 11px;
-  font-weight: 700;
-}
-.node-id {
-  font-size: 12px;
-  margin-top: 2px;
-}
-.node-preview {
-  font-size: 11px;
-  margin-top: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.port.out {
-  position: absolute;
-  right: -7px;
-  top: 50%;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #94a3b8;
-  transform: translateY(-50%);
-  border: 2px solid var(--bg-surface);
+  height: 560px;
+  background: var(--bg-app);
 }
 
 @media (max-width: 1100px) {

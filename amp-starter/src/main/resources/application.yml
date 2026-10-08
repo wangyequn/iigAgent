@@ -1,0 +1,21 @@
+server:
+  port: 18085
+
+spring:
+  application:
+    name: amp-starter
+
+amp:
+  agent:
+    name: demo
+    model-id: ${AMP_MODEL_ID:deepseek:deepseek-flash}
+    sys-prompt: ${AMP_SYS_PROMPT:你是业务助手，用中文简洁回答。}
+    workspace: ${AMP_WORKSPACE:./data/workspace}
+    redis-uri: ${AMP_REDIS_URI:redis://127.0.0.1:6379}
+    state-key-prefix: ${AMP_STATE_KEY_PREFIX:amp:starter:state:}
+    compaction-trigger-messages: 30
+    compaction-keep-messages: 10
+
+logging:
+  level:
+    com.example.agent: INFO

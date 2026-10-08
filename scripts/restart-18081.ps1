@@ -11,6 +11,10 @@ $env:AMP_PG_PASSWORD = 'amp'
 $env:AMP_MODEL_ID = 'deepseek:deepseek-flash'
 $env:AMP_API_KEY = 's0-demo-key'
 $env:AMP_TENANT_ID = 'acme'
+$env:AMP_NACOS_AI_ENABLED = 'true'
+$env:AMP_NACOS_SERVER = '127.0.0.1:8848'
+$env:AMP_NACOS_AI_IDENTITY_KEY = 'serverIdentity'
+$env:AMP_NACOS_AI_IDENTITY_VALUE = 'security'
 New-Item -ItemType Directory -Force -Path ".\logs" | Out-Null
 $mvn = "D:\Program Files (x86)\apache-maven-3.8.8\bin\mvn.cmd"
 Write-Host "MVN=$mvn exists=$(Test-Path $mvn)"
@@ -29,6 +33,10 @@ $job = Start-Job -ScriptBlock {
   $env:AMP_MODEL_ID = 'deepseek:deepseek-flash'
   $env:AMP_API_KEY = 's0-demo-key'
   $env:AMP_TENANT_ID = 'acme'
+  $env:AMP_NACOS_AI_ENABLED = 'true'
+  $env:AMP_NACOS_SERVER = '127.0.0.1:8848'
+  $env:AMP_NACOS_AI_IDENTITY_KEY = 'serverIdentity'
+  $env:AMP_NACOS_AI_IDENTITY_VALUE = 'security'
   & $mvn -f $pom -pl platform-open-api spring-boot:run 2>&1
 } -ArgumentList (Get-Location).Path, $pom, $mvn
 Write-Host "JOB=$($job.Id)"

@@ -57,11 +57,14 @@ CREATE TABLE IF NOT EXISTS mcp_server (
   command        VARCHAR(256),
   args           VARCHAR(1024),
   url            VARCHAR(512),
-  enable_tools   VARCHAR(512),
+  enable_tools   TEXT,
   status         VARCHAR(32)  NOT NULL DEFAULT 'REGISTERED',
   created_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (tenant_id, name)
 );
+
+-- Nacos AI Registry：来源标记；nacos 导入不得覆盖 local 种子/手工登记
+ALTER TABLE mcp_server ADD COLUMN IF NOT EXISTS source VARCHAR(16) NOT NULL DEFAULT 'local';
 
 -- S4: 业务工具登记（进程内 / MCP / HTTP）
 CREATE TABLE IF NOT EXISTS business_tool (

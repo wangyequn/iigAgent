@@ -118,4 +118,15 @@ public class WorkflowController {
 
     public record ConfirmRunRequest(Boolean approved, String note) {
     }
+
+    @org.springframework.web.bind.annotation.ExceptionHandler(
+            com.sinosoft.amp.openapi.security.UnauthorizedException.class)
+    public org.springframework.http.ResponseEntity<com.sinosoft.amp.common.api.ApiError> handleUnauthorized(
+            com.sinosoft.amp.openapi.security.UnauthorizedException e) {
+        return org.springframework.http.ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
+                .body(com.sinosoft.amp.common.api.ApiError.of(
+                        "INSUFFICIENT_SCOPE",
+                        e.getMessage(),
+                        java.util.UUID.randomUUID().toString()));
+    }
 }

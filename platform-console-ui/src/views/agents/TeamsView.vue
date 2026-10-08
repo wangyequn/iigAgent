@@ -15,7 +15,7 @@ const form = ref({
   leaderAgentId: 'demo',
   memberAgentIds: '',
 })
-const goal = ref('排查昨日异常订单')
+const goal = ref('协同排查平台告警')
 
 async function load() {
   loading.value = true
@@ -89,7 +89,7 @@ onMounted(load)
     <EmptyState
       v-if="!teams.length"
       title="还没有 Team"
-      description="创建 Agent 小队，适合订单排查、工单处理等多角色场景。"
+      description="创建 Agent 小队，适合工单处理、多角色协作等场景。"
       icon="Connection"
     >
       <el-button type="primary" @click="formOpen = true">新建 Team</el-button>

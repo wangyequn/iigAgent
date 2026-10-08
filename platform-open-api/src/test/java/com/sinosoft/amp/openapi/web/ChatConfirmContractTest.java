@@ -119,7 +119,7 @@ class ChatConfirmContractTest {
     private static ToolUseBlock pendingBlock() {
         return ToolUseBlock.builder()
                 .id("call_00_pending")
-                .name("place_order")
+                .name("dangerous_write")
                 .input(Map.of("product", "书", "quantity", 1))
                 .content("{\"product\":\"书\",\"quantity\":1}")
                 .build();
@@ -151,11 +151,11 @@ class ChatConfirmContractTest {
         when(agent.streamEvents(anyList(), any(RuntimeContext.class)))
                 .thenReturn(Flux.just(
                         new RequireUserConfirmEvent("reply-1", List.of(pendingBlock()))))
-                .thenReturn(Flux.just(finalResult("订单已创建 ORD-1")));
+                .thenReturn(Flux.just(finalResult("记录已创建 REC-1")));
 
         ApprovalItem pending = new ApprovalItem(
                 "apr-1", "acme", "demo", "u1", "confirm-e2e-2",
-                "reply-1", "call_00_pending", "place_order",
+                "reply-1", "call_00_pending", "dangerous_write",
                 "{\"product\":\"书\",\"quantity\":1}",
                 ApprovalItem.PENDING, null, null, Instant.now(), null);
         when(governance.pending("acme", "demo", "confirm-e2e-2")).thenReturn(List.of(pending));
@@ -170,10 +170,10 @@ class ChatConfirmContractTest {
         mockMvc.perform(post("/api/v1/agents/demo/sessions/confirm-e2e-2/confirm")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"userId\":\"u1\",\"toolCalls\":[{\"toolCallId\":\"call_00_pending\","
-                                + "\"toolName\":\"place_order\",\"confirmed\":true,"
+                                + "\"toolName\":\"dangerous_write\",\"confirmed\":true,"
                                 + "\"input\":{\"product\":\"书\",\"quantity\":1}}]}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.reply").value("订单已创建 ORD-1"));
+                .andExpect(jsonPath("$.reply").value("记录已创建 REC-1"));
 
         // 回归护栏：恢复消息里的 ToolUseBlock 必须带 content（否则 schema 校验失败 → 空回复老 bug）
         ArgumentCaptor<List<Msg>> msgs = ArgumentCaptor.forClass(List.class);
@@ -207,7 +207,7 @@ class ChatConfirmContractTest {
         mockMvc.perform(post("/api/v1/agents/demo/sessions/confirm-e2e-3/confirm")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"userId\":\"u1\",\"acceptRule\":true,\"toolCalls\":["
-                                + "{\"toolCallId\":\"call_00_pending\",\"toolName\":\"place_order\","
+                                + "{\"toolCallId\":\"call_00_pending\",\"toolName\":\"dangerous_write\","
                                 + "\"confirmed\":true,\"input\":{\"product\":\"书\",\"quantity\":1}}]}"))
                 .andExpect(status().isOk());
 
@@ -230,7 +230,7 @@ class ChatConfirmContractTest {
     void approvalsExposeSuggestedRules() throws Exception {
         ApprovalItem pending = new ApprovalItem(
                 "apr-2", "acme", "demo", "u1", "confirm-e2e-4",
-                "reply-1", "call_00_pending", "place_order",
+                "reply-1", "call_00_pending", "dangerous_write",
                 "{\"product\":\"书\"}",
                 ApprovalItem.PENDING, null, null, Instant.now(), null);
         when(governance.pending("acme", "demo", "confirm-e2e-4")).thenReturn(List.of(pending));
@@ -238,7 +238,7 @@ class ChatConfirmContractTest {
         mockMvc.perform(get("/api/v1/agents/demo/sessions/confirm-e2e-4/approvals")
                         .param("userId", "u1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.pending[0].toolName").value("place_order"))
+                .andExpect(jsonPath("$.pending[0].toolName").value("dangerous_write"))
                 .andExpect(jsonPath("$.pending[0].suggestedRules[0].behavior").value("ALLOW"))
                 .andExpect(jsonPath("$.pending[0].suggestedRules[0].source").value("session"));
     }

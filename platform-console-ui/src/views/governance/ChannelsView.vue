@@ -14,7 +14,7 @@ const payload = ref(
     {
       event: 'message.received',
       from: 'user-1',
-      text: '帮我查一下订单',
+      text: '帮我看看平台状态',
     },
     null,
     2,

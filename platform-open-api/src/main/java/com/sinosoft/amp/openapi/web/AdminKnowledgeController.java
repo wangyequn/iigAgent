@@ -60,6 +60,45 @@ public class AdminKnowledgeController {
         return body;
     }
 
+    /** 多文件上传：Dify 走原文件解析（PDF/DOCX/PPTX/XLSX/图片等）；Simple 抽取文本类。 */
+    @PostMapping("/documents/file")
+    public Map<String, Object> uploadFiles(
+            @RequestParam("files") org.springframework.web.multipart.MultipartFile[] files,
+            @RequestParam(value = "source", required = false, defaultValue = "console") String source) {
+        String tenant = AuthContext.requireTenantId();
+        List<Map<String, Object>> uploaded = new ArrayList<>();
+        List<Map<String, Object>> failed = new ArrayList<>();
+        if (files != null) {
+            for (org.springframework.web.multipart.MultipartFile file : files) {
+                if (file == null || file.isEmpty()) {
+                    continue;
+                }
+                String filename = file.getOriginalFilename() == null ? "upload" : file.getOriginalFilename();
+                try {
+                    SimpleKnowledgeService.IngestResult r = knowledge.ingestFile(
+                            tenant, filename, file.getBytes(), source);
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("filename", filename);
+                    m.put("documentId", r.documentId());
+                    m.put("title", r.title());
+                    m.put("chunkCount", r.chunkCount());
+                    uploaded.add(m);
+                } catch (Exception e) {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("filename", filename);
+                    m.put("error", e.getMessage());
+                    failed.add(m);
+                }
+            }
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("provider", knowledge.providerId());
+        body.put("uploaded", uploaded);
+        body.put("failed", failed);
+        body.put("tenantId", tenant);
+        return body;
+    }
+
     @GetMapping("/documents")
     public Map<String, Object> list() {
         String tenant = AuthContext.requireTenantId();

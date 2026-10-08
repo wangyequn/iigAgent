@@ -1,4 +1,4 @@
-# AI 中台 · S0–S9
+﻿# AI 中台 · S0–S9
 
 基于 **AgentScope Java 2.0.3** 的 AI 中台 Walking Skeleton（**S0–S9 全部落地**）。
 
@@ -87,7 +87,7 @@ curl -s http://127.0.0.1:18081/api/v1/admin/model-credentials -Headers $headers
 | 配置（`amp.tools.*`） | 默认 | 说明 |
 | --- | --- | --- |
 | `mode` | `deny` | `allow` = 白名单（生产推荐） |
-| `allow` | `query_orders,place_order,knowledge_search` | allow 模式生效 |
+| `allow` | `knowledge_search,safe_lookup` | allow 模式生效 |
 | `enable-agent-spawn` | false | 关闭 subagent / `agent_spawn` |
 | `enable-shell` | false | 关闭 shell/execute |
 | `enable-filesystem` | false | 关闭读写/检索文件 |
@@ -171,11 +171,20 @@ docker compose up --build
 
 ## 模块
 
+依赖方向：`common → runtime → governance → ops → channel → open-api`（`amp-starter` 不依赖 platform-*）。
+
 | 模块 | 职责 |
 | --- | --- |
 | `platform-common` | 错误码等公共 DTO |
-| `platform-open-api` | Spring MVC + 目录/版本 + 实例缓存 + SSE |
+| `platform-runtime` | 目录/鉴权/会话/Agent 缓存与策略/知识/模型/FS/billing/共享 ops |
+| `platform-governance` | 权限/MCP/技能/沙箱 |
+| `platform-ops` | Nacos/OTel/Loki/限流/审计过滤 |
+| `platform-channel` | Channel/Automation/Orchestration/IAM |
+| `platform-open-api` | Spring Boot 入口 + Web + 装配（Factory/Bootstrap/ConsoleBot） |
+| `amp-starter` | 可抄金路径（Copy 模式） |
 | `platform-console-ui` | Vue3 Playground（S3：版本列表 / 发布切流 / 对话） |
+
+> 首次构建或改动公共模块后请先 `mvn -DskipTests install`，再 `spring-boot:run` / `scripts/run-api-18081.cmd`。
 
 ## S3 目录与版本（B2 最小实现）
 
@@ -252,7 +261,7 @@ npm run dev
 ### S4（HITL + 工具）
 - [x] 权限表：`permission_rule` / `agent_permission_mode`（ALLOW/ASK/DENY）
 - [x] MCP 登记：`mcp_server` + Admin API（真实连通属债务）
-- [x] 业务工具：`OrderToolset`（`@Tool`）`query_orders` / `place_order`
+- [x] 业务工具：`SampleToolset`（`@Tool`）`safe_lookup` / `dangerous_write`
 - [x] `approval_item` + SSE `REQUIRE_USER_CONFIRM` + confirm 恢复
 - [x] 幂等：重复 confirm → `409 APPROVAL_ALREADY_RESOLVED`
 - [x] Admin：permissions / mcp-servers / business-tools / inbox / decide
@@ -265,9 +274,9 @@ $HA = @{ Authorization = "Bearer s0-admin-key"; "Content-Type" = "application/js
 # 权限
 curl -s http://127.0.0.1:18081/api/v1/admin/governance/permissions -Headers $HA
 
-# SSE 下单 → REQUIRE_USER_CONFIRM → place_order pending
+# SSE 危险写 → REQUIRE_USER_CONFIRM → dangerous_write pending
 # POST /api/v1/agents/demo/sessions/{sid}/confirm
-#   -d '{"userId":"u1","toolCalls":[{"toolCallId":"...","toolName":"place_order","confirmed":true,"input":{"product":"书","quantity":"1"}}],"confirmed":true}'
+#   -d '{"userId":"u1","toolCalls":[{"toolCallId":"...","toolName":"dangerous_write","confirmed":true,"input":{"target":"doc","amount":"1"}}],"confirmed":true}'
 ```
 
 ### S5（技能市场）
@@ -295,14 +304,14 @@ curl -s -X POST http://127.0.0.1:18081/api/v1/admin/skills/{id}/approve -Headers
 - [x] 自建 `LocalHashEmbedder`（128 维 n-gram 哈希，无外部服务）
 - [x] 入库切片 + 余弦检索 + **引用片段 `[docId#chunkId]`**
 - [x] 工具 `knowledge_search`；Admin：`/api/v1/admin/knowledge/documents`、`/search`
-- [x] 种子文档《AI中台订单规范》
+- [x] 种子文档《控制台智能机器人使用指南》《AI中台能力地图》
 - [x] `mvn test` 全绿（33）
 
 ```powershell
 $HA = @{ Authorization = "Bearer s0-admin-key"; "Content-Type" = "application/json" }
 curl -s -X POST http://127.0.0.1:18081/api/v1/admin/knowledge/documents -Headers $HA `
   -d '{"title":"退货政策","content":"七天无理由退货。"}'
-curl -s "http://127.0.0.1:18081/api/v1/admin/knowledge/search?query=place_order&topK=3" -Headers $HA
+curl -s "http://127.0.0.1:18081/api/v1/admin/knowledge/search?query=使用指南&topK=3" -Headers $HA
 # 响应 hits[].citation 如 [docId#docId_0]，text 为原文片段
 ```
 
@@ -360,7 +369,7 @@ curl -s -X POST http://127.0.0.1:18081/api/v1/admin/external-agents/{id}/heartbe
 - [ ] 限流已按容量调整（`amp.ratelimit.rate-limit-per-minute`）
 - [ ] `/actuator/prometheus` 已接入监控；日志可按 `sessionId=` 检索
 - [ ] 技能市场：未审技能不可见（回归 `/api/v1/admin/skills/visible`）
-- [ ] HITL：`place_order` ASK 路径抽检
+- [ ] HITL：`dangerous_write` ASK 路径抽检
 - [ ] API Key 已更换默认 `s0-demo-key`；管理 API 走 `/api/v1/admin/*`
 
 ### SSE 断线续传（§6.1）
@@ -553,3 +562,30 @@ powershell -File scripts/smoke-load.ps1 -N 20 -Concurrency 4
 - `chat/completions` OpenAI 兼容 — **已实现**（`OpenAiCompatController`，open scope Bearer）
 - MCP 生产 Server 真实接入（非演示 stdio）
 - 全量压测 NFR（首 Token P95、200 并发校准；现仅冒烟分位）
+
+
+## Nacos AI Registry（运维）
+
+前提：Nacos **>=3.1**（`docker-compose` 中 `nacos` 服务），Admin API 用 `serverIdentity` 头。
+
+```powershell
+# 启动（见 docker-compose.yml）
+docker-compose up -d nacos
+
+# 一键冒烟（MCP toolsMeta 过滤 + AgentCard 导入 + local 种子保护）
+powershell -File scripts/nacos-ai-smoke.ps1
+
+# 管理 API（admin scope）
+$HA = @{ Authorization = "Bearer s0-admin-key" }
+Invoke-RestMethod http://127.0.0.1:18081/api/v1/admin/nacos/ai -Headers $HA
+Invoke-RestMethod -Method Post http://127.0.0.1:18081/api/v1/admin/nacos/mcp/sync -Headers $HA
+Invoke-RestMethod -Method Post http://127.0.0.1:18081/api/v1/admin/nacos/agents/import -Headers $HA
+Invoke-RestMethod -Method Post "http://127.0.0.1:18081/api/v1/admin/nacos/prompts/refresh" -Headers $HA
+
+# Prompt 热更（可选）
+# AMP_NACOS_AI_PROMPT_ENABLED=true
+# 键：amp.agent.{agentId}.sys；发布态 pin version/stable，开发态 latest
+# 变更后 POST .../prompts/refresh 并 evict 实例（下一轮生效）
+```
+
+约定：仅 **nacos->local**；AgentCard **discover-only**；`enable_tools` 必须非空才会注入 Toolkit。

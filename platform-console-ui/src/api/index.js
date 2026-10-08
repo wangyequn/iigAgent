@@ -11,8 +11,12 @@ export const replicaInfo = () => http.get('/api/v1/health/replica')
 /* ───────── Agents / Catalog ───────── */
 export const listAgents = (apiKey) => http.get('/api/v1/agents', withKey(apiKey))
 export const createAgent = (body) => http.post('/api/v1/admin/agents', body, admin())
-export const listVersions = (agentId, apiKey) =>
-  http.get(`/api/v1/agents/${agentId}/versions`, withKey(apiKey))
+export const updateAgent = (agentId, body) =>
+  http.put(`/api/v1/admin/agents/${encodeURIComponent(agentId)}`, body, admin())
+export const deleteAgent = (agentId) =>
+  http.del(`/api/v1/admin/agents/${encodeURIComponent(agentId)}`, admin())
+export const listVersions = (agentId) =>
+  http.get(`/api/v1/agents/${agentId}/versions`, admin())
 export const createVersion = (agentId, body) =>
   http.post(`/api/v1/admin/agents/${agentId}/versions`, body, admin())
 export const publishVersion = (agentId, version) =>
@@ -152,13 +156,42 @@ export const knowledgeStatus = () => http.get('/api/v1/admin/knowledge/status', 
 export const listKnowledgeDocs = () => http.get('/api/v1/admin/knowledge/documents', admin())
 export const uploadKnowledge = (title, content) =>
   http.post('/api/v1/admin/knowledge/documents', { title, content, source: 'console' }, admin())
+
+/** 多文件上传（Dify 支持 PDF/DOCX/PPTX/XLSX/图片等；Simple 仅文本类） */
+export async function uploadKnowledgeFiles(files) {
+  const form = new FormData()
+  for (const f of files) form.append('files', f)
+  form.append('source', 'console')
+  const res = await fetch('/api/v1/admin/knowledge/documents/file', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getAdminKey()}` },
+    body: form,
+  })
+  const text = await res.text()
+  if (!res.ok) {
+    let code = ''
+    try {
+      code = JSON.parse(text).code || ''
+    } catch {
+      /* raw */
+    }
+    const err = new Error(code ? `${code} · upload failed` : `upload failed: ${res.status}`)
+    err.status = res.status
+    err.body = text
+    throw err
+  }
+  return JSON.parse(text || '{}')
+}
 export const searchKnowledge = (query, topK = 5) =>
   http.get('/api/v1/admin/knowledge/search', { ...admin(), query: { query, topK } })
 
 /* ───────── Governance ───────── */
-export const listPermissions = () => http.get('/api/v1/admin/governance/permissions', admin())
+export const listPermissions = (agentId) =>
+  http.get('/api/v1/admin/governance/permissions', { ...admin(), query: { agentId } })
 export const upsertPermission = (body) =>
   http.post('/api/v1/admin/governance/permissions', body, admin())
+export const deletePermission = (body) =>
+  http.del('/api/v1/admin/governance/permissions', { ...admin(), body })
 export const setPermissionMode = (body) =>
   http.post('/api/v1/admin/governance/permission-mode', body, admin())
 export const listMcpServers = () => http.get('/api/v1/admin/mcp-servers', admin())
@@ -168,6 +201,8 @@ export const mcpTest = (name) =>
 export const listBusinessTools = () => http.get('/api/v1/admin/business-tools', admin())
 export const registerBusinessTool = (body) =>
   http.post('/api/v1/admin/business-tools', body, admin())
+export const deleteBusinessTool = (toolName) =>
+  http.del(`/api/v1/admin/business-tools/${encodeURIComponent(toolName)}`, admin())
 
 /* ───────── IAM ───────── */
 export const listIamRoles = () => http.get('/api/v1/admin/iam/roles', admin())
@@ -178,23 +213,23 @@ export const revokeIamRole = (userId, roleCode) =>
   http.del(`/api/v1/admin/iam/users/${encodeURIComponent(userId)}/roles/${roleCode}`, admin())
 
 /* ───────── Workflow / Team ───────── */
-export const listWorkflows = () => http.get('/api/v1/workflows', open())
+export const listWorkflows = () => http.get('/api/v1/workflows', admin())
 export const upsertWorkflow = (workflowId, body) =>
-  http.put(`/api/v1/workflows/${workflowId}`, body, open())
+  http.put(`/api/v1/workflows/${workflowId}`, body, admin())
 export const publishWorkflowRevision = (workflowId) =>
-  http.post(`/api/v1/workflows/${workflowId}/revisions`, {}, open())
+  http.post(`/api/v1/workflows/${workflowId}/revisions`, {}, admin())
 export const startWorkflowRun = (workflowId, body) =>
-  http.post(`/api/v1/workflows/${workflowId}/runs`, body, open())
-export const listRuns = (limit = 50) => http.get(`/api/v1/runs`, { ...open(), query: { limit } })
-export const getRun = (runId) => http.get(`/api/v1/runs/${runId}`, open())
-export const getRunEvents = (runId) => http.get(`/api/v1/runs/${runId}/events`, open())
+  http.post(`/api/v1/workflows/${workflowId}/runs`, body, admin())
+export const listRuns = (limit = 50) => http.get(`/api/v1/runs`, { ...admin(), query: { limit } })
+export const getRun = (runId) => http.get(`/api/v1/runs/${runId}`, admin())
+export const getRunEvents = (runId) => http.get(`/api/v1/runs/${runId}/events`, admin())
 export const confirmRun = (runId, approved, note) =>
-  http.post(`/api/v1/runs/${runId}/confirm`, { approved, note }, open())
-export const cancelRun = (runId) => http.post(`/api/v1/runs/${runId}/cancel`, {}, open())
-export const listTeams = () => http.get('/api/v1/teams', open())
-export const upsertTeam = (teamId, body) => http.put(`/api/v1/teams/${teamId}`, body, open())
+  http.post(`/api/v1/runs/${runId}/confirm`, { approved, note }, admin())
+export const cancelRun = (runId) => http.post(`/api/v1/runs/${runId}/cancel`, {}, admin())
+export const listTeams = () => http.get('/api/v1/teams', admin())
+export const upsertTeam = (teamId, body) => http.put(`/api/v1/teams/${teamId}`, body, admin())
 export const createTeamTask = (teamId, goal) =>
-  http.post(`/api/v1/teams/${teamId}/tasks`, { goal }, open())
+  http.post(`/api/v1/teams/${teamId}/tasks`, { goal }, admin())
 
 /* ───────── Ops / Billing ───────── */
 export const metricsSummary = () => http.get('/api/v1/admin/metrics/summary', admin())

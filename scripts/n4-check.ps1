@@ -1,4 +1,4 @@
-# N4 上线检查单（脚本化）
+﻿# N4 上线检查单（脚本化）
 #
 # 检查项: health/ready、Open Key 列表、Open Key 被 admin 拒绝、Admin Key 技能/审计、
 #         模型凭证打码、默认 demo Key 是否已轮换（生产门禁）。
@@ -73,9 +73,21 @@ if ($creds -and $creds.items) {
 }
 Check "model credentials masked" $maskedOk ""
 
-# 6) 默认 Key 非 demo（生产门禁：未改则 FAIL）
+# 6) Nacos AI Registry status (admin scope)
+$ai = Get-Json "$Base/api/v1/admin/nacos/ai" $AdminKey
+Check "nacos ai status reachable" ($ai -ne $null) $(if ($ai) { "enabled=$($ai.enabled) dir=$($ai.syncDirection)" } else { "unreachable" })
+if ($ai -and $ai.enabled -eq $true) {
+  Check "nacos ai sync-direction locked" ($ai.syncDirection -eq "nacos-to-local") "dir=$($ai.syncDirection)"
+  Check "nacos ai agent-card discover-only" ($ai.agentCardMode -eq "discover-only") "mode=$($ai.agentCardMode)"
+} else {
+  Write-Host "[INFO] nacos ai disabled (ok for non-AI deploys)" -ForegroundColor Yellow
+}
+
+# 7) default key 非 demo（生产门禁：未改则 FAIL）
 Check "default demo key rotated (warn)" ($OpenKey -ne "s0-demo-key") "current open key is demo default"
 
 Write-Host ""
 Write-Host "=== Result: pass=$pass fail=$fail ==="
 if ($fail -gt 0) { exit 1 } else { exit 0 }
+
+

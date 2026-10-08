@@ -18,6 +18,22 @@
       <groupId>com.sinosoft.amp</groupId>
       <artifactId>platform-common</artifactId>
     </dependency>
+    <dependency>
+      <groupId>com.sinosoft.amp</groupId>
+      <artifactId>platform-runtime</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.sinosoft.amp</groupId>
+      <artifactId>platform-governance</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.sinosoft.amp</groupId>
+      <artifactId>platform-ops</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.sinosoft.amp</groupId>
+      <artifactId>platform-channel</artifactId>
+    </dependency>
 
     <dependency>
       <groupId>org.springframework.boot</groupId>
@@ -35,11 +51,12 @@
       <groupId>io.micrometer</groupId>
       <artifactId>micrometer-registry-prometheus</artifactId>
     </dependency>
-    <!-- S7/T2 Nacos 配置中心（可选；disabled 时不连） -->
+    <!-- S7/T2 Nacos 配置中心 + S9 Nacos AI Registry（可选；disabled 时不连） -->
+    <!-- 决策：升 3.x；AI Admin HTTP / AiService 依赖 3.1+ -->
     <dependency>
       <groupId>com.alibaba.nacos</groupId>
       <artifactId>nacos-client</artifactId>
-      <version>2.4.3</version>
+      <version>3.2.3</version>
     </dependency>
     <!-- S7 OTel 链路（OTLP 或 logging 导出） -->
     <dependency>
@@ -83,6 +100,10 @@
     <dependency>
       <groupId>io.agentscope</groupId>
       <artifactId>agentscope-extensions-redis</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.agentscope</groupId>
+      <artifactId>agentscope-extensions-mem0</artifactId>
     </dependency>
     <dependency>
       <groupId>redis.clients</groupId>

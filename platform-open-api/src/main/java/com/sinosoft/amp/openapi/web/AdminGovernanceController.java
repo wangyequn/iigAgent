@@ -13,6 +13,7 @@ import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -69,9 +70,10 @@ public class AdminGovernanceController {
     }
 
     @GetMapping("/governance/permissions")
-    public Map<String, Object> getPermissions() {
+    public Map<String, Object> getPermissions(
+            @RequestParam(required = false) String agentId) {
         String tenant = AuthContext.requireTenantId();
-        String agentId = requireDemoAgent();
+        agentId = AuthContext.requireAgentIdOrDefault(agentId);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("tenantId", tenant);
         body.put("agentId", agentId);
@@ -103,6 +105,16 @@ public class AdminGovernanceController {
                 "toolName", rec.toolName(),
                 "behavior", rec.behavior(),
                 "ruleContent", rec.ruleContent());
+    }
+
+    @DeleteMapping("/governance/permissions")
+    public Map<String, Object> deletePermission(@RequestBody PermissionDeleteRequest request) {
+        String tenant = AuthContext.requireTenantId();
+        String agentId = AuthContext.requireAgentIdOrDefault(request.agentId());
+        governance.deleteRule(tenant, agentId, request.toolName(), request.behavior(), request.ruleContent());
+        evictInstances(tenant, "permission-delete:" + request.toolName());
+        ruleScrubber.resyncTool(request.toolName(), request.behavior() == null ? "DENY" : request.behavior());
+        return Map.of("deleted", true, "toolName", request.toolName(), "agentId", agentId);
     }
 
     @PostMapping("/governance/permission-mode")
@@ -153,9 +165,11 @@ public class AdminGovernanceController {
         for (BusinessToolRecord t : governance.listTools(tenant)) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("toolName", t.toolName());
+            row.put("displayName", t.description() == null || t.description().isBlank() ? t.toolName() : t.description());
             row.put("description", t.description());
             row.put("kind", t.kind());
             row.put("status", t.status());
+            row.put("config", t.config() == null ? "" : t.config());
             list.add(row);
         }
         return Map.of("tenantId", tenant, "tools", list);
@@ -171,6 +185,13 @@ public class AdminGovernanceController {
                 "kind", rec.kind(),
                 "status", rec.status(),
                 "description", rec.description() == null ? "" : rec.description());
+    }
+
+    @DeleteMapping("/business-tools/{toolName}")
+    public Map<String, Object> deleteTool(@PathVariable String toolName) {
+        String tenant = AuthContext.requireTenantId();
+        boolean ok = governance.deleteTool(tenant, toolName);
+        return Map.of("deleted", ok, "toolName", toolName);
     }
 
     @GetMapping("/inbox")
@@ -244,6 +265,9 @@ public class AdminGovernanceController {
     }
 
     public record PermissionRequest(String agentId, @NotBlank String toolName, @NotBlank String behavior, String ruleContent, String source) {
+    }
+
+    public record PermissionDeleteRequest(String agentId, String toolName, String behavior, String ruleContent) {
     }
 
     public record ModeRequest(String agentId, @NotBlank String mode) {

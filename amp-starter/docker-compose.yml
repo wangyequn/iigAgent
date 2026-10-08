@@ -1,0 +1,12 @@
+# 复制本目录后：docker compose up -d
+# 仅 Redis；PostgreSQL 等平台组件不在 starter 范围
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

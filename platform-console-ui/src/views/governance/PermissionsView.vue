@@ -12,7 +12,7 @@ const permissions = ref([])
 const mode = ref('DEFAULT')
 const form = ref({
   agentId: 'demo',
-  toolName: 'place_order',
+  toolName: 'dangerous_write',
   behavior: 'ASK',
   ruleContent: '下单需确认',
 })
@@ -29,7 +29,9 @@ async function load() {
   loading.value = true
   try {
     const data = await listPermissions()
-    const list = data.permissions || data.items || (Array.isArray(data) ? data : [])
+    const list = Array.isArray(data)
+      ? data
+      : data.rules || data.permissions || data.items || []
     permissions.value = list
   } catch (e) {
     ElMessage.error(e.message)
@@ -104,7 +106,7 @@ onMounted(load)
             <el-input v-model="form.agentId" />
           </el-form-item>
           <el-form-item label="toolName">
-            <el-input v-model="form.toolName" placeholder="place_order" />
+            <el-input v-model="form.toolName" placeholder="dangerous_write" />
           </el-form-item>
           <el-form-item label="behavior">
             <el-radio-group v-model="form.behavior">

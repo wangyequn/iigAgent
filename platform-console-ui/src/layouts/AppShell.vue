@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { ElMessage } from 'element-plus'
 import { listSessionApprovals, listInbox } from '@/api'
+import ConsoleBot from '@/components/bot/ConsoleBot.vue'
 
 const store = useAppStore()
 const route = useRoute()
@@ -292,6 +293,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         <div class="t-faint mono" style="margin-top:4px">{{ n.at }}</div>
       </div>
     </el-drawer>
+
+    <!-- 右下角智能机器人 -->
+    <ConsoleBot />
   </div>
 </template>
 

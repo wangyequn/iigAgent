@@ -31,11 +31,29 @@ public class AgentInstanceFactory implements AgentInstanceCreator {
     private final ToolPolicyProperties toolPolicy;
     private final com.sinosoft.amp.openapi.model.ModelCredentialService modelCredentials;
     private final com.sinosoft.amp.openapi.skill.SkillCanaryProperties skillCanary;
+    private final com.sinosoft.amp.openapi.tool.ConsoleBotSupport consoleBotSupport;
     /** 骞冲彴鍏变韩 MessageBus锛堝敜閱掑垎鍙戣闃呭悓涓€瀹炰緥锛夛紱null 鏃?harness build 鍐呴儴鎸?fs 鑷姩娲剧敓銆?*/
     private io.agentscope.harness.agent.bus.MessageBus messageBus;
+    /** 官方 Mem0 LongTermMemory（多租户作用域）；未配置则不挂工具/中间件 */
+    private com.sinosoft.amp.openapi.memory.ScopedMem0LongTermMemory longTermMemory;
+    private com.sinosoft.amp.openapi.memory.Mem0MemoryMiddleware mem0Middleware;
+    /** Nacos Prompt 热更（可选）；null 则用库内 sys_prompt */
+    private com.sinosoft.amp.openapi.ops.NacosPromptService promptService;
 
     public void setMessageBus(io.agentscope.harness.agent.bus.MessageBus messageBus) {
         this.messageBus = messageBus;
+    }
+
+    public void setLongTermMemory(com.sinosoft.amp.openapi.memory.ScopedMem0LongTermMemory longTermMemory) {
+        this.longTermMemory = longTermMemory;
+    }
+
+    public void setMem0Middleware(com.sinosoft.amp.openapi.memory.Mem0MemoryMiddleware mem0Middleware) {
+        this.mem0Middleware = mem0Middleware;
+    }
+
+    public void setPromptService(com.sinosoft.amp.openapi.ops.NacosPromptService promptService) {
+        this.promptService = promptService;
     }
 
     public AgentInstanceFactory(AgentProperties defaults) {
@@ -122,6 +140,24 @@ public class AgentInstanceFactory implements AgentInstanceCreator {
             ToolPolicyProperties toolPolicy,
             com.sinosoft.amp.openapi.model.ModelCredentialService modelCredentials,
             com.sinosoft.amp.openapi.skill.SkillCanaryProperties skillCanary) {
+        this(defaults, governance, skillCatalog, knowledge, mcpConnect, sandbox, baseStore, fsMode, fsScope,
+                toolPolicy, modelCredentials, skillCanary, null);
+    }
+
+    public AgentInstanceFactory(
+            AgentProperties defaults,
+            GovernanceService governance,
+            com.sinosoft.amp.openapi.skill.SkillCatalogRepository skillCatalog,
+            com.sinosoft.amp.openapi.knowledge.KnowledgeService knowledge,
+            com.sinosoft.amp.openapi.governance.McpConnectService mcpConnect,
+            com.sinosoft.amp.openapi.sandbox.DockerSandboxService sandbox,
+            io.agentscope.harness.agent.filesystem.remote.store.BaseStore baseStore,
+            String fsMode,
+            String fsScope,
+            ToolPolicyProperties toolPolicy,
+            com.sinosoft.amp.openapi.model.ModelCredentialService modelCredentials,
+            com.sinosoft.amp.openapi.skill.SkillCanaryProperties skillCanary,
+            com.sinosoft.amp.openapi.tool.ConsoleBotSupport consoleBotSupport) {
         this.defaults = Objects.requireNonNull(defaults, "defaults");
         this.jedis = new JedisPooled(defaults.redisUri());
         this.stateKeyPrefix = defaults.stateKeyPrefix() == null || defaults.stateKeyPrefix().isBlank()
@@ -140,6 +176,7 @@ public class AgentInstanceFactory implements AgentInstanceCreator {
         this.skillCanary = skillCanary == null
                 ? new com.sinosoft.amp.openapi.skill.SkillCanaryProperties(null, 100, null, null)
                 : skillCanary;
+        this.consoleBotSupport = consoleBotSupport;
     }
 
     private static ToolPolicyProperties defaultToolPolicy() {
@@ -162,6 +199,12 @@ public class AgentInstanceFactory implements AgentInstanceCreator {
                 : requestTenantId;
         String effectiveModel = blankTo(modelId, defaults.modelId());
         String effectivePrompt = blankTo(sysPrompt, defaults.sysPrompt());
+        if (promptService != null && promptService.enabled()) {
+            String fromNacos = promptService.resolveSysPrompt(tenant, agentId, version, effectivePrompt);
+            if (fromNacos != null && !fromNacos.isBlank()) {
+                effectivePrompt = fromNacos;
+            }
+        }
         // 鏃х瀛?瀛橀噺琛屾妸 workspace 鍐欐垚瑁稿熀纭€璺緞锛岃鍚屾湭璁剧疆锛岀粺涓€璧?{base}/{tenant}/v{version}
         boolean workspaceUnset = workspace == null || workspace.isBlank()
                 || workspace.equals(defaults.workspace());
@@ -186,6 +229,12 @@ public class AgentInstanceFactory implements AgentInstanceCreator {
                 .middleware(new io.agentscope.core.tracing.OtelTracingMiddleware())
                 // 瀹樻柟閰嶆柟锛欻ITL 鍏ㄦ嫆鍚庣珛鍗冲仠姝㈡湰杞紙GenerateReason.ALL_TOOLS_DENIED锛夛紝閬垮厤妯″瀷绌鸿浆
                 .middleware(new StopOnAllDeniedMiddleware());
+        // Mem0 长期记忆：自动召回 + 对话后沉淀（官方 Mem0LongTermMemory）
+        if (mem0Middleware != null && longTermMemory != null
+                && longTermMemory.properties().isConfigured()) {
+            builder.middleware(mem0Middleware);
+            log.info("mem0 memory middleware enabled agent={}", agentId);
+        }
 
         // AgentScope 杩愯鏃跺弬鏁帮紙AgentScope 2.0锛氭ā鍨嬮噸璇?鍥為€€銆佷笂涓嬫枃鍘嬬缉銆亀orkspace 涓婁笅鏂囬绠楋級
         if (defaults.maxRetries() != null) {
@@ -300,11 +349,12 @@ public class AgentInstanceFactory implements AgentInstanceCreator {
 
         HarnessAgent agent = builder.build();
         // @Tool registry -> ReflectiveFunctionTool; PermissionEngine may hit ASK
-        boolean allowOrders = toolPolicy.allowlistMode()
-                ? toolPolicy.effectiveAllow().contains("query_orders") || toolPolicy.effectiveAllow().contains("place_order")
+        // 通用示例工具（非业务域），默认注册
+        boolean allowSample = toolPolicy.allowlistMode()
+                ? toolPolicy.effectiveAllow().contains("safe_lookup") || toolPolicy.effectiveAllow().contains("dangerous_write")
                 : true;
-        if (allowOrders) {
-            agent.getToolkit().registerTool(new com.sinosoft.amp.openapi.tool.OrderToolset());
+        if (allowSample) {
+            agent.getToolkit().registerTool(new com.sinosoft.amp.openapi.tool.SampleToolset());
         }
         // S6锛氱煡璇嗘绱㈠伐鍏凤紙甯﹀紩鐢級
         boolean allowKnowledge = toolPolicy.allowlistMode()
@@ -312,6 +362,43 @@ public class AgentInstanceFactory implements AgentInstanceCreator {
                 : true;
         if (knowledge != null && tenant != null && allowKnowledge) {
             agent.getToolkit().registerTool(new com.sinosoft.amp.openapi.knowledge.KnowledgeToolset(knowledge, tenant));
+        }
+
+        // Mem0 长期记忆：官方 LongTermMemoryTools（recordToMemory / retrieveFromMemory）
+        if (longTermMemory != null && longTermMemory.properties().isConfigured()) {
+            boolean allowMemory = !toolPolicy.allowlistMode()
+                    || toolPolicy.effectiveAllow().stream().anyMatch(n ->
+                            n.contains("memory") || n.contains("Memory"));
+            if (allowMemory) {
+                agent.getToolkit().registerTool(
+                        new io.agentscope.core.memory.LongTermMemoryTools(longTermMemory));
+                log.info("mem0 long-term memory tools registered agent={} tenant={}", agentId, tenant);
+            }
+        }
+
+        // HTTP 通用业务工具：business_tool.config 带 url/method，登记即可调用
+        if (governance != null && tenant != null) {
+            try {
+                for (com.sinosoft.amp.openapi.tool.BusinessToolRecord t : governance.listTools(tenant)) {
+                    if (!com.sinosoft.amp.openapi.tool.BusinessToolRecord.KIND_HTTP.equalsIgnoreCase(t.kind())) {
+                        continue;
+                    }
+                    if (!com.sinosoft.amp.openapi.tool.BusinessToolRecord.STATUS_ENABLED.equalsIgnoreCase(t.status())) {
+                        continue;
+                    }
+                    boolean allowHttpTool = !toolPolicy.allowlistMode()
+                            || toolPolicy.effectiveAllow().contains(t.toolName());
+                    if (!allowHttpTool) {
+                        continue;
+                    }
+                    com.sinosoft.amp.openapi.tool.HttpToolSpec spec =
+                            com.sinosoft.amp.openapi.tool.HttpToolSpec.from(t);
+                    agent.getToolkit().registerAgentTool(new com.sinosoft.amp.openapi.tool.HttpBusinessTool(spec));
+                    log.info("http business tool registered agent={} tool={}", agentId, t.toolName());
+                }
+            } catch (RuntimeException e) {
+                log.warn("register http business tools failed agent={}: {}", agentId, e.toString());
+            }
         }
         // T7: Docker sandbox exec tool (default off)
         boolean allowSandbox = toolPolicy.allowlistMode()
@@ -321,6 +408,19 @@ public class AgentInstanceFactory implements AgentInstanceCreator {
             agent.getToolkit().registerTool(new com.sinosoft.amp.openapi.tool.SandboxToolset(sandbox, tenant));
             log.info("sandbox_exec tool registered agent={} scope={}", agentId,
                     sandbox.status().get("isolationScope"));
+        }
+        // 右下角智能机器人工具面：平台全能力 + UI 深度交互
+        // console-bot 必挂；其它 Agent 在非严格 allowlist 时也挂，便于统一能力面
+        if (consoleBotSupport != null && tenant != null) {
+            boolean allowConsoleBot = !toolPolicy.allowlistMode()
+                    || "console-bot".equals(agentId)
+                    || toolPolicy.effectiveAllow().stream().anyMatch(n -> n.startsWith("list_")
+                            || n.startsWith("ui_") || "platform_status".equals(n)
+                            || "usage_summary".equals(n) || "console_knowledge_search".equals(n));
+            if (allowConsoleBot) {
+                agent.getToolkit().registerTool(new com.sinosoft.amp.openapi.tool.ConsoleBotToolset(consoleBotSupport, tenant));
+                log.info("console-bot tools registered agent={} tenant={}", agentId, tenant);
+            }
         }
         log.info("build agent instance agentId={} version={} modelId={} toolMode={} tenant={} workspace={}",
                 agentId, version, effectiveModel, toolPolicy.mode(), tenant, effectiveWorkspace);

@@ -1,13 +1,13 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
-import { listKnowledgeDocs, uploadKnowledge, searchKnowledge, knowledgeStatus } from '@/api'
+import { listKnowledgeDocs, uploadKnowledge, searchKnowledge, knowledgeStatus, uploadKnowledgeFiles } from '@/api'
 import { ElMessage } from 'element-plus'
 
 const docs = ref([])
 const hits = ref([])
-const query = ref('订单')
+const query = ref('使用指南')
 const topK = ref(5)
 const title = ref('')
 const content = ref('')
@@ -15,6 +15,21 @@ const loading = ref(false)
 const searching = ref(false)
 const tab = ref('docs')
 const provider = ref('simple')
+const fileList = ref([])
+const uploading = ref(false)
+const uploadMode = ref('file')
+
+const acceptTypes = computed(() =>
+  provider.value === 'dify'
+    ? '.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv,.html,.xml,.json,.yml,.yaml,.png,.jpg,.jpeg,.webp'
+    : '.txt,.md,.markdown,.csv,.tsv,.json,.log,.yml,.yaml,.html,.htm,.xml',
+)
+
+const acceptHint = computed(() =>
+  provider.value === 'dify'
+    ? 'Dify 解析：PDF / Word / PPT / Excel / 图片 / 文本 等'
+    : 'Simple 抽取：txt / md / csv / json / html / yaml 等文本类',
+)
 
 async function loadStatus() {
   try {
@@ -56,6 +71,38 @@ async function doUpload() {
   }
 }
 
+function onFileChange(file, list) {
+  fileList.value = list || []
+}
+
+function onFileRemove(file, list) {
+  fileList.value = list || []
+}
+
+async function doUploadFiles() {
+  if (!fileList.value.length) {
+    ElMessage.warning('请选择文件')
+    return
+  }
+  uploading.value = true
+  try {
+    const files = fileList.value.map((x) => x.raw || x).filter(Boolean)
+    const data = await uploadKnowledgeFiles(files)
+    const ok = data.uploaded?.length || 0
+    const bad = data.failed?.length || 0
+    if (ok) ElMessage.success(`已上传 ${ok} 个文件（provider=${data.provider}）`)
+    if (bad) {
+      ElMessage.warning(`失败 ${bad} 个：${data.failed.map((x) => x.filename).join(', ')}`)
+    }
+    fileList.value = []
+    await load()
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    uploading.value = false
+  }
+}
+
 async function doSearch() {
   searching.value = true
   try {
@@ -90,17 +137,49 @@ onMounted(load)
     <div class="card">
       <div class="card-header">
         <div class="title">入库</div>
+        <el-radio-group v-model="uploadMode" size="small">
+          <el-radio-button value="file">上传文件</el-radio-button>
+          <el-radio-button value="text">粘贴文本</el-radio-button>
+        </el-radio-group>
       </div>
       <div class="card-pad">
-        <el-form label-position="top">
-          <el-form-item label="标题">
-            <el-input v-model="title" placeholder="例如：退货政策" />
-          </el-form-item>
-          <el-form-item label="内容">
-            <el-input v-model="content" type="textarea" :rows="8" placeholder="粘贴知识原文…" />
-          </el-form-item>
-          <el-button type="primary" @click="doUpload">上传文档</el-button>
-        </el-form>
+        <template v-if="uploadMode === 'file'">
+          <el-upload
+            drag
+            multiple
+            :auto-upload="false"
+            :limit="20"
+            :on-change="onFileChange"
+            :on-remove="onFileRemove"
+            :accept="acceptTypes"
+          >
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+            <div class="el-upload__text">拖拽文件到此处，或 <em>点击选择</em>（可多选）</div>
+            <template #tip>
+              <div class="t-faint" style="margin-top:6px">{{ acceptHint }}</div>
+            </template>
+          </el-upload>
+          <el-button
+            type="primary"
+            style="margin-top:12px"
+            :loading="uploading"
+            :disabled="!fileList.length"
+            @click="doUploadFiles"
+          >
+            上传 {{ fileList.length || '' }} 个文件
+          </el-button>
+        </template>
+        <template v-else>
+          <el-form label-position="top">
+            <el-form-item label="标题">
+              <el-input v-model="title" placeholder="例如：退货政策" />
+            </el-form-item>
+            <el-form-item label="内容">
+              <el-input v-model="content" type="textarea" :rows="8" placeholder="粘贴知识原文…" />
+            </el-form-item>
+            <el-button type="primary" @click="doUpload">上传文档</el-button>
+          </el-form>
+        </template>
       </div>
     </div>
 

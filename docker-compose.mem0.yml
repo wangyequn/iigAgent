@@ -1,0 +1,77 @@
+﻿# Mem0 OSS 自托管（REST API + pgvector）
+# 用法：
+#   1. 复制 scripts/mem0/.env.example 为 scripts/mem0/.env 并填入密钥
+#   2. docker compose -f docker-compose.mem0.yml --env-file scripts/mem0/.env up -d
+#   3. API: http://127.0.0.1:8888  /docs ；Dashboard 可选
+# 平台侧配置：amp.mem0.base-url=http://127.0.0.1:8888  amp.mem0.api-key=<ADMIN_API_KEY 或 m0sk_...>
+name: amp-mem0
+
+services:
+  mem0-postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    shm_size: "128mb"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mem0pass}
+      POSTGRES_DB: postgres
+    ports:
+      # 宿主机 15433，避开平台 PG 15432
+      - "${MEM0_PG_HOST_PORT:-15433}:5432"
+    volumes:
+      - mem0-pg:/var/lib/postgresql/data
+      - ./scripts/mem0/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mem0-api:
+    build:
+      context: ./scripts/mem0/server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mem0-postgres:
+        condition: service_healthy
+    ports:
+      - "${MEM0_API_HOST_PORT:-8888}:8000"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-amp-mem0-jwt-secret-change-me-please-32+}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-amp-mem0-admin-key-please-rotate}
+      AUTH_DISABLED: ${AUTH_DISABLED:-true}
+      MEM0_ADMIN_EMAIL: ${MEM0_ADMIN_EMAIL:-admin@amp.local}
+      MEM0_ADMIN_PASSWORD: ${MEM0_ADMIN_PASSWORD:-amp-mem0-admin}
+      MEM0_TELEMETRY: "false"
+      PYTHONUNBUFFERED: "1"
+      POSTGRES_HOST: mem0-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mem0pass}
+      POSTGRES_DB: postgres
+      APP_DB_NAME: mem0_app
+    volumes:
+      - mem0-history:/tmp/qdrant
+
+  # 可选 Dashboard（浏览器管理记忆 / API Key / 审计）
+  mem0-dashboard:
+    build:
+      context: ./scripts/mem0/dashboard
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    profiles: ["dashboard"]
+    depends_on:
+      - mem0-api
+    ports:
+      - "${MEM0_DASH_HOST_PORT:-3000}:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:${MEM0_API_HOST_PORT:-8888}
+      API_INTERNAL_URL: http://mem0-api:8000
+      NEXT_PUBLIC_INSTANCE_NAME: AMP-Mem0
+
+volumes:
+  mem0-pg:
+  mem0-history:

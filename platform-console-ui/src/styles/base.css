@@ -213,6 +213,17 @@ pre.code,
   border-radius: var(--radius-lg) !important;
 }
 
+/* 弹窗标题区呼吸感 */
+.el-dialog__header {
+  padding: 18px 22px 10px !important;
+}
+.el-dialog__body {
+  padding: 12px 22px 18px !important;
+}
+.el-dialog__footer {
+  padding: 12px 22px 18px !important;
+}
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.18s ease;

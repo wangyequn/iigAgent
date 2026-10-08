@@ -20,14 +20,14 @@ const form = ref({
       steps: [
         { id: 's1', type: 'ECHO', input: '准备排查', next: 'gate' },
         { id: 'gate', type: 'HUMAN_GATE', prompt: '是否继续调用 Agent？', next: 's2' },
-        { id: 's2', type: 'AGENT', agentId: 'demo', input: '总结今日订单异常' },
+        { id: 's2', type: 'AGENT', agentId: 'demo', input: '总结今日运行摘要' },
       ],
     },
     null,
     2,
   ),
 })
-const runGoal = ref('排查昨日异常订单')
+const runGoal = ref('生成运行摘要')
 const selectedRun = ref(null)
 const runEvents = ref([])
 

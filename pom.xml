@@ -13,7 +13,13 @@
 
   <modules>
     <module>platform-common</module>
+    <module>platform-runtime</module>
+    <module>platform-governance</module>
+    <module>platform-ops</module>
+    <module>platform-channel</module>
     <module>platform-open-api</module>
+    <!-- Phase 2：金路径 Starter（Copy 模式；不依赖 platform-*） -->
+    <module>amp-starter</module>
   </modules>
 
   <properties>
@@ -39,6 +45,26 @@
         <version>${project.version}</version>
       </dependency>
       <dependency>
+        <groupId>com.sinosoft.amp</groupId>
+        <artifactId>platform-runtime</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.sinosoft.amp</groupId>
+        <artifactId>platform-governance</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.sinosoft.amp</groupId>
+        <artifactId>platform-ops</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.sinosoft.amp</groupId>
+        <artifactId>platform-channel</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
         <groupId>io.agentscope</groupId>
         <artifactId>agentscope-harness</artifactId>
         <version>${agentscope.version}</version>
@@ -56,6 +82,11 @@
       <dependency>
         <groupId>io.agentscope</groupId>
         <artifactId>agentscope-extensions-redis</artifactId>
+        <version>${agentscope.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.agentscope</groupId>
+        <artifactId>agentscope-extensions-mem0</artifactId>
         <version>${agentscope.version}</version>
       </dependency>
     </dependencies>

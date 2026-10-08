@@ -1,10 +1,15 @@
 package com.sinosoft.amp.openapi.web;
 
+import com.sinosoft.amp.common.api.ApiError;
 import com.sinosoft.amp.openapi.agent.CatalogRuntimeService;
 import com.sinosoft.amp.openapi.catalog.AgentRecord;
 import com.sinosoft.amp.openapi.catalog.AgentStatus;
 import com.sinosoft.amp.openapi.catalog.AgentVersionRecord;
 import com.sinosoft.amp.openapi.security.AuthContext;
+import com.sinosoft.amp.openapi.security.UnauthorizedException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,9 +20,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
- * 管理台：按当前 API Key 租户读目录，含 release 版本指针。
+ * Console agent catalog: list agents and versions under current API-key tenant.
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -36,6 +42,7 @@ public class AgentAdminController {
         for (AgentRecord record : catalogRuntime.listAgents(tenant)) {
             Map<String, Object> agent = new LinkedHashMap<>();
             agent.put("id", record.agentId());
+            agent.put("agentId", record.agentId());
             agent.put("name", record.name());
             agent.put("enabled", record.status() == AgentStatus.ACTIVE);
             Optional<Integer> release = catalogRuntime.releaseVersion(tenant, record.agentId());
@@ -74,5 +81,11 @@ public class AgentAdminController {
         body.put("releaseVersion", catalogRuntime.releaseVersion(tenant, agentId).orElse(null));
         body.put("versions", versions);
         return body;
+    }
+
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<ApiError> handleUnauthorized(UnauthorizedException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiError.of("INSUFFICIENT_SCOPE", e.getMessage(), UUID.randomUUID().toString()));
     }
 }

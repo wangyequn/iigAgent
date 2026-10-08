@@ -1,12 +1,12 @@
 server:
-  # 鏈満 18080 甯歌鍗犵敤锛岄粯璁ゆ敼 18081
+  # Default 18081 (avoid 18080 clash)
   port: ${AMP_SERVER_PORT:18081}
 
 spring:
   application:
     name: platform-open-api
   datasource:
-    # 瀹夸富鏈烘槧灏勶細compose 灏嗗鍣?5432 鈫?瀹夸富 15432
+    # compose maps container 5432 -> host 15432
     url: ${AMP_PG_URI:jdbc:postgresql://127.0.0.1:15432/amp}
     username: ${AMP_PG_USER:amp}
     password: ${AMP_PG_PASSWORD:amp}
@@ -32,7 +32,7 @@ management:
 
 amp:
   fs:
-    # remote = PostgreSQL BaseStore锛堝鍓湰鍏变韩宸ヤ綔鍖猴級锛沴ocal = 鏈湴璺緞
+    # remote = PostgreSQL BaseStore (shared workspace); local = local path
     mode: ${AMP_FS_MODE:remote}
     isolation-scope: ${AMP_FS_SCOPE:USER}
   sandbox:
@@ -63,6 +63,29 @@ amp:
     data-id: ${AMP_NACOS_DATA_ID:amp-platform.properties}
     username: ${AMP_NACOS_USERNAME:}
     password: ${AMP_NACOS_PASSWORD:}
+    # Nacos AI Registry（决策：仅 nacos→local；discover-only；namespace 后置 prefix）
+    ai:
+      enabled: ${AMP_NACOS_AI_ENABLED:false}
+      server-addr: ${AMP_NACOS_AI_SERVER:${AMP_NACOS_SERVER:127.0.0.1:8848}}
+      tenant-namespace: ${AMP_NACOS_AI_TENANT_NS:shared}
+      shared-namespace: ${AMP_NACOS_AI_SHARED_NS:public}
+      username: ${AMP_NACOS_AI_USERNAME:${AMP_NACOS_USERNAME:}}
+      password: ${AMP_NACOS_AI_PASSWORD:${AMP_NACOS_PASSWORD:}}
+      context-path: ${AMP_NACOS_AI_CONTEXT_PATH:/nacos}
+      sync-direction: nacos-to-local
+      agent-card-mode: discover-only
+      # Nacos 3 Admin API（与容器 NACOS_AUTH_IDENTITY_* 对齐）
+      identity-key: ${AMP_NACOS_AI_IDENTITY_KEY:serverIdentity}
+      identity-value: ${AMP_NACOS_AI_IDENTITY_VALUE:security}
+      sync-on-start: ${AMP_NACOS_AI_SYNC_ON_START:false}
+      prompt-enabled: ${AMP_NACOS_AI_PROMPT_ENABLED:false}
+      prompt-pin-published: ${AMP_NACOS_AI_PROMPT_PIN:true}
+      prompt-stable-label: ${AMP_NACOS_AI_PROMPT_STABLE_LABEL:stable}
+      prompt-latest-label: ${AMP_NACOS_AI_PROMPT_LATEST_LABEL:latest}
+      prompt-key-prefix: ${AMP_NACOS_AI_PROMPT_KEY_PREFIX:amp.agent.}
+      prompt-cache-ttl-ms: ${AMP_NACOS_AI_PROMPT_CACHE_TTL_MS:60000}
+      # tenant-namespace=prefix 时：namespace = {namespace-prefix}{tenantId}
+      namespace-prefix: ${AMP_NACOS_AI_NS_PREFIX:amp-}
   external:
     heartbeat-timeout-sec: ${AMP_EXTERNAL_HB_TIMEOUT_SEC:90}
   ops:
@@ -73,51 +96,56 @@ amp:
   auth:
     enabled: ${AMP_AUTH_ENABLED:true}
     keys:
-      # 涓氬姟渚?Open API锛堝璇濈瓑锛夛紱涓嶈兘璋?/api/v1/admin/**
+      # Open API key (chat etc.); cannot call /api/v1/admin/**
+      # 授权 = 租户 + scope；agents 可选收窄（空/* = 租户内全部 Agent）
       - key: ${AMP_API_KEY:s0-demo-key}
         tenant-id: ${AMP_TENANT_ID:acme}
-        agents: [demo]
+        agents: ['*']
         scopes: [open]
-      # 绠＄悊鍙?/ 杩愮淮锛堝彲鍚屾椂璋?Open API锛夛紱鐢熶骇璇风嫭绔嬭疆鎹?      - key: ${AMP_ADMIN_API_KEY:s0-admin-key}
+      # Admin / ops key; rotate in production
+      - key: ${AMP_ADMIN_API_KEY:s0-admin-key}
         tenant-id: ${AMP_TENANT_ID:acme}
-        agents: [demo]
+        agents: ['*']
         scopes: [open, admin]
   agent:
     name: demo
     model-id: ${AMP_MODEL_ID:deepseek:deepseek-flash}
-    sysPrompt: "浣犳槸涓€涓畝娲佺殑 AI 涓彴婕旂ず鍔╂墜锛岀敤涓枃鍥炵瓟銆?
+    sysPrompt: "你是一个简洁的 AI 中台演示助手，用中文回答。"
     workspace: ${AMP_WORKSPACE:.agentscope/workspace}
     redis-uri: ${AMP_REDIS_URI:redis://127.0.0.1:6379}
     state-key-prefix: "amp:demo:session:"
     require-session-context: true
-    # AgentScope 杩愯鏃讹細0=鎸夋ā鍨嬬獥鍙ｅ姩鎬佽Е鍙戝帇缂╋紙妯″瀷鏈笂鎶ョ獥鍙ｆ椂鎸?160k 鍏滃簳锛?    compaction-trigger-tokens: ${AMP_COMPACTION_TRIGGER_TOKENS:0}
-    # 涓绘ā鍨嬪け璐ユ椂鐨勫洖閫€妯″瀷锛堝 deepseek:deepseek-chat锛夛紱鐣欑┖涓嶅洖閫€
+    # 0 = dynamic trigger by model window
+    compaction-trigger-tokens: ${AMP_COMPACTION_TRIGGER_TOKENS:0}
+    # Fallback model when primary fails; blank disables
     fallback-model-id: ${AMP_FALLBACK_MODEL_ID:}
-    # 妯″瀷璋冪敤閲嶈瘯娆℃暟锛坔arness 榛樿 3锛?    max-retries: ${AMP_MODEL_MAX_RETRIES:3}
-    # workspace 涓婁笅鏂囨敞鍏ラ绠?token锛坔arness 榛樿 8000锛?    max-context-tokens: ${AMP_MAX_CONTEXT_TOKENS:8000}
-    # AgentScope 2.0 鑳藉姏寮€鍏筹紙榛樿淇濇寔鏃㈡湁琛屼负锛?    enable-plan-mode: ${AMP_ENABLE_PLAN_MODE:false}
+    max-retries: ${AMP_MODEL_MAX_RETRIES:3}
+    max-context-tokens: ${AMP_MAX_CONTEXT_TOKENS:8000}
+    enable-plan-mode: ${AMP_ENABLE_PLAN_MODE:false}
     enable-task-list: ${AMP_ENABLE_TASK_LIST:false}
     enable-meta-tool: ${AMP_ENABLE_META_TOOL:false}
-    # 寮傛宸ュ叿鍗歌浇锛氬伐鍏锋墽琛岃秴杩囪姣鏁拌浆鍚庡彴锛堝崰浣嶈繑鍥?+ 瀹屾垚鍚庡敜閱掓仮澶嶏級锛?=鍏抽棴
+    # Async tool offload; 0 disables
     async-tool-timeout-ms: ${AMP_ASYNC_TOOL_TIMEOUT_MS:0}
-    # 瀵硅瘽鍘嬬缉锛圝ava 瀹樻柟 quickstart 鎺ㄨ崘鏄惧紡閰嶇疆锛涢粯璁?30 鏉¤Е鍙?/ 淇濈暀鏈€杩?10 鏉★級
+    # Explicit compaction (Java quickstart style)
     compaction-trigger-messages: ${AMP_COMPACTION_TRIGGER_MESSAGES:30}
     compaction-keep-messages: ${AMP_COMPACTION_KEEP_MESSAGES:10}
-    # 澶у伐鍏风粨鏋滃嵏杞斤紙>80K 瀛楃钀界洏锛屽彧鐣欓灏炬憳瑕?+ read_file 璺緞鎻愮ず锛?    tool-result-eviction: ${AMP_TOOL_RESULT_EVICTION:true}
-  # 宸ュ叿闈㈤粯璁ゆ敹绱э細deny=榛戝悕鍗曪紱allow=鐧藉悕鍗曪紙鐢熶骇鎺ㄨ崘 allow + query_orders/place_order/knowledge_search锛?  tools:
+    tool-result-eviction: ${AMP_TOOL_RESULT_EVICTION:true}
+  # Tool surface: deny = blacklist; allow = whitelist
+  tools:
     mode: ${AMP_TOOLS_MODE:deny}
-    # allow: [query_orders, place_order, knowledge_search]
+    # allow: [knowledge_search, safe_lookup]
     extra-deny: []
     enable-agent-spawn: ${AMP_TOOLS_AGENT_SPAWN:false}
     enable-shell: ${AMP_TOOLS_SHELL:false}
     enable-filesystem: ${AMP_TOOLS_FS:false}
-  # RAG Embedding锛歨ash=鏈湴锛沨ttp=OpenAI 鍏煎 /v1/embeddings锛堝け璐ュ洖閫€ hash锛?  rag:
+  # RAG embedding: hash=local; http=OpenAI-compatible /v1/embeddings
+  rag:
     provider: ${AMP_RAG_PROVIDER:hash}
     http-base-url: ${AMP_RAG_BASE_URL:}
     http-api-key: ${AMP_RAG_API_KEY:}
     http-model: ${AMP_RAG_MODEL:text-embedding-3-small}
     http-dimensions: ${AMP_RAG_DIMS:}
-    # Dify 知识库（Dataset API）：enabled=true 时入库/检索走 Dify，否则 Simple+PG
+    # Dify knowledge (Dataset API): enabled=true routes ingest/search to Dify
     dify:
       enabled: ${AMP_DIFY_KB_ENABLED:true}
       base-url: ${AMP_DIFY_KB_BASE_URL:http://192.168.31.201/v1}
@@ -128,11 +156,22 @@ amp:
       reranking-enable: ${AMP_DIFY_KB_RERANK:false}
       score-threshold-enabled: ${AMP_DIFY_KB_SCORE_ON:false}
       score-threshold: ${AMP_DIFY_KB_SCORE:0.5}
-  # 鎶€鑳界伆搴︼細鐜 + 鎸?userId 绋冲畾鍝堝笇鐧惧垎姣?  skill:
+
+  # Mem0 长期记忆（官方 agentscope-extensions-mem0）
+  # 自托管: docker compose -f docker-compose.mem0.yml --env-file scripts/mem0/.env up -d
+  mem0:
+    enabled: ${AMP_MEM0_ENABLED:false}
+    base-url: ${AMP_MEM0_BASE_URL:http://127.0.0.1:8888}
+    api-key: ${AMP_MEM0_API_KEY:}
+    api-type: ${AMP_MEM0_API_TYPE:self-hosted}
+    auto-recall: ${AMP_MEM0_AUTO_RECALL:true}
+    auto-capture: ${AMP_MEM0_AUTO_CAPTURE:true}
+    recall-top-k: ${AMP_MEM0_RECALL_TOP_K:5}
+    timeout-sec: ${AMP_MEM0_TIMEOUT_SEC:60}
+  skill:
     canary:
       environment: ${AMP_SKILL_ENV:}
       default-percent: ${AMP_SKILL_ROLLOUT:100}
-      # percents: { order-style: 20 }
       allowed-environments: ${AMP_SKILL_ENVS:}
   runtime:
     max-instances: ${AMP_RUNTIME_MAX_INSTANCES:50}
@@ -140,7 +179,6 @@ amp:
     drain-sweep-ms: ${AMP_RUNTIME_DRAIN_SWEEP_MS:5000}
   sse:
     replay-ttl-ms: ${AMP_SSE_REPLAY_TTL_MS:30000}
-  # 澶氬壇鏈繍琛屾椂浜嬩欢锛坮elease 鍒囨祦 / 瀹炰緥椹遍€愶級璧?Redis pub/sub
   events:
     enabled: ${AMP_EVENTS_ENABLED:true}
 

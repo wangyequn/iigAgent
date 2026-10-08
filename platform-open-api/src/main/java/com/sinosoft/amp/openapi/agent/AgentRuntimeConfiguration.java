@@ -20,6 +20,24 @@ public class AgentRuntimeConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(AgentRuntimeConfiguration.class);
 
+    @Bean
+    public com.sinosoft.amp.openapi.tool.ConsoleBotSupport consoleBotSupport(
+            com.sinosoft.amp.openapi.catalog.AgentCatalogRepository catalog,
+            GovernanceService governance,
+            com.sinosoft.amp.openapi.knowledge.KnowledgeService knowledge,
+            SkillCatalogRepository skills,
+            com.sinosoft.amp.openapi.orchestration.WorkflowService workflows,
+            com.sinosoft.amp.openapi.orchestration.TeamService teams,
+            com.sinosoft.amp.openapi.billing.QuotaService quota,
+            com.sinosoft.amp.openapi.ops.AuditLogService audit,
+            com.sinosoft.amp.openapi.ops.ReadinessSupport readiness,
+            com.sinosoft.amp.openapi.ops.PlatformMetrics metrics,
+            com.sinosoft.amp.openapi.ops.RuntimeConfigService config) {
+        return new com.sinosoft.amp.openapi.tool.ConsoleBotSupport(
+                catalog, governance, knowledge, skills, workflows,
+                teams, quota, audit, readiness, metrics, config);
+    }
+
     @Bean(destroyMethod = "close")
     @ConditionalOnMissingBean(AgentInstanceCreator.class)
     public AgentInstanceFactory agentInstanceFactory(
@@ -34,11 +52,19 @@ public class AgentRuntimeConfiguration {
             ToolPolicyProperties toolPolicy,
             com.sinosoft.amp.openapi.model.ModelCredentialService modelCredentials,
             com.sinosoft.amp.openapi.skill.SkillCanaryProperties skillCanary,
-            MessageBus platformMessageBus) {
+            MessageBus platformMessageBus,
+            com.sinosoft.amp.openapi.memory.ScopedMem0LongTermMemory longTermMemory,
+            com.sinosoft.amp.openapi.memory.Mem0MemoryMiddleware mem0Middleware,
+            @org.springframework.context.annotation.Lazy
+            com.sinosoft.amp.openapi.tool.ConsoleBotSupport consoleBotSupport,
+            com.sinosoft.amp.openapi.ops.NacosPromptService promptService) {
         AgentInstanceFactory factory = new AgentInstanceFactory(properties, governance, skillCatalog, knowledge,
                 mcpConnect, sandbox, baseStore, fsProperties.mode(), fsProperties.isolationScope(),
-                toolPolicy, modelCredentials, skillCanary);
+                toolPolicy, modelCredentials, skillCanary, consoleBotSupport);
         factory.setMessageBus(platformMessageBus);
+        factory.setLongTermMemory(longTermMemory);
+        factory.setMem0Middleware(mem0Middleware);
+        factory.setPromptService(promptService);
         return factory;
     }
 
