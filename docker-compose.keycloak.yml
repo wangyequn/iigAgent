@@ -1,0 +1,22 @@
+# Keycloak 开发环境（IAM-RBAC 方案步骤 3）
+# 生产请：start --optimized + HTTPS + 备份，勿用本文件的 dev 模式与默认口令
+# 启动：docker compose -f docker-compose.keycloak.yml up -d
+# 控制台：http://127.0.0.1:8180  （admin / admin）
+# 建 realm=amp，client=amp-console（Authorization Code + PKCE），角色与平台对齐：
+#   tenant_admin / ops / skill_reviewer / auditor / developer / agent_caller
+# 业务 API 配置：AMP_IAM_ISSUER_URI=http://127.0.0.1:8180/realms/amp
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: 8180
+    ports:
+      - "8180:8180"
+    volumes:
+      - keycloak-data:/data
+
+volumes:
+  keycloak-data:

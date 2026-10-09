@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import JsonView from '@/components/ui/JsonView.vue'
-import { getOpenKey } from '@/api/http'
+import { getOpenKey, headers } from '@/api/http'
 import { ElMessage } from 'element-plus'
 import { useAppStore } from '@/stores/app'
 
@@ -32,10 +32,7 @@ async function send() {
     const url = '/api/v1/chat/completions'
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${getOpenKey()}`,
-        'Content-Type': 'application/json',
-      },
+      headers: headers(getOpenKey()),
       body: JSON.stringify({
         model: model.value,
         messages: parsed,

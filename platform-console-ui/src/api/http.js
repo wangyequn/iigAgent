@@ -1,4 +1,6 @@
 /** Unified HTTP helpers with platform error codes. */
+import { getAccessToken, ensureFreshToken } from '@/auth/oidc'
+
 const STORAGE_KEY = 'amp.console.auth'
 
 export function loadAuth() {
@@ -21,9 +23,16 @@ export function getAdminKey() {
   return loadAuth().adminKey || 's0-admin-key'
 }
 
-export function headers(apiKey) {
+/**
+ * Authorization 头：人轨 JWT 优先，未登录回退机器 API Key。
+ * @param {string} [apiKey] 显式 Key（流式/文件上传等）
+ * @param {{ forceKey?: boolean }} [opts] forceKey=true 时强制用 Key（机器轨）
+ */
+export function headers(apiKey, opts = {}) {
+  const jwt = opts.forceKey ? null : getAccessToken()
+  const token = jwt || apiKey || getOpenKey()
   return {
-    Authorization: `Bearer ${apiKey}`,
+    Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
   }
 }
@@ -44,16 +53,19 @@ function buildError(res, text, path) {
   return err
 }
 
-async function request(method, path, { apiKey, body, query, raw } = {}) {
+async function request(method, path, { apiKey, body, query, raw, forceKey } = {}) {
   const qs = query
     ? `?${new URLSearchParams(
         Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== ''),
       ).toString()}`
     : ''
   const url = path + qs
+  if (!forceKey) {
+    await ensureFreshToken()
+  }
   const res = await fetch(url, {
     method,
-    headers: headers(apiKey || getOpenKey()),
+    headers: headers(apiKey || getOpenKey(), { forceKey }),
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) {

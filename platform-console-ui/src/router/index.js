@@ -2,6 +2,12 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
   {
+    path: '/auth/callback',
+    name: 'auth-callback',
+    component: () => import('@/views/auth/AuthCallbackView.vue'),
+    meta: { title: 'OIDC 登录' },
+  },
+  {
     path: '/',
     component: () => import('@/layouts/AppShell.vue'),
     redirect: { name: 'chat' },
@@ -52,19 +58,19 @@ const routes = [
         path: 'workflows',
         name: 'workflows',
         component: () => import('@/views/agents/WorkflowListView.vue'),
-        meta: { title: '编排 Workflow', group: 'Agent 中心' },
+        meta: { title: '编排 Workflow（待开发）', group: 'Agent 中心' },
       },
       {
         path: 'workflows/:workflowId',
         name: 'workflow-editor',
         component: () => import('@/views/agents/WorkflowEditorView.vue'),
-        meta: { title: 'Workflow 编辑器', group: 'Agent 中心' },
+        meta: { title: 'Workflow 编辑器（待开发）', group: 'Agent 中心' },
       },
       {
         path: 'teams',
         name: 'teams',
         component: () => import('@/views/agents/TeamsView.vue'),
-        meta: { title: 'Team 协作', group: 'Agent 中心' },
+        meta: { title: 'Team 协作（待开发）', group: 'Agent 中心' },
       },
       {
         path: 'governance/permissions',
@@ -77,12 +83,6 @@ const routes = [
         name: 'tools',
         component: () => import('@/views/governance/ToolsView.vue'),
         meta: { title: 'MCP 与工具', group: '治理中心' },
-      },
-      {
-        path: 'governance/channels',
-        name: 'channels',
-        component: () => import('@/views/governance/ChannelsView.vue'),
-        meta: { title: '渠道 Channel', group: '治理中心' },
       },
       {
         path: 'governance/external',

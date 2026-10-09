@@ -47,7 +47,7 @@ class SkillMarketplaceTest {
 
     @Test
     void approveThenVisibleAndWriteableFalse() {
-        SkillRecord rec = admin.upload("acme", "style-demo", "1.0.0", "desc", "# body", "u1");
+        SkillRecord rec = admin.upload("acme", "style-demo", "1.0.0", "desc", "# style\n\nApply concise Chinese tone in all replies.", "u1");
         SkillRecord approved = admin.approve("acme", rec.id(), "reviewer", "ok");
         assertEquals(SkillRecord.APPROVED, approved.status());
 
@@ -69,7 +69,7 @@ class SkillMarketplaceTest {
 
     @Test
     void approveEvictsInstances() {
-        SkillRecord rec = admin.upload("acme", "style-demo", "1.0.0", "d", "# x", "u1");
+        SkillRecord rec = admin.upload("acme", "style-demo", "1.0.0", "d", "# style\n\nEvict cache after skill review.", "u1");
         cache.getOrCreate("acme", "demo", 1, "m", "p", "w");
         assertEquals(1, cache.size());
         admin.approve("acme", rec.id(), "rev", "ok");
@@ -78,7 +78,7 @@ class SkillMarketplaceTest {
 
     @Test
     void foreignTenantCannotApprove() {
-        SkillRecord rec = admin.upload("acme", "s1", "1.0.0", "d", "# x", "u1");
+        SkillRecord rec = admin.upload("acme", "s1", "1.0.0", "d", "# s1\n\nReal body for approve path.", "u1");
         assertThrows(CatalogException.class, () -> admin.approve("other", rec.id(), "r", null));
     }
 

@@ -107,6 +107,12 @@ amp:
         tenant-id: ${AMP_TENANT_ID:acme}
         agents: ['*']
         scopes: [open, admin]
+  iam:
+    # 人轨 JWT/OIDC（Keycloak 等）。issuer/jwk 均空 = 兼容模式，仅 API Key
+    issuer-uri: ${AMP_IAM_ISSUER_URI:}
+    jwk-set-uri: ${AMP_IAM_JWK_SET_URI:}
+    # 迁移窗口才打开；默认禁止 X-User-Id / X-User-Roles 自报头
+    trust-headers: ${AMP_IAM_TRUST_HEADERS:false}
   agent:
     name: demo
     model-id: ${AMP_MODEL_ID:deepseek:deepseek-flash}
@@ -138,12 +144,13 @@ amp:
     enable-agent-spawn: ${AMP_TOOLS_AGENT_SPAWN:false}
     enable-shell: ${AMP_TOOLS_SHELL:false}
     enable-filesystem: ${AMP_TOOLS_FS:false}
-  # RAG embedding: hash=local; http=OpenAI-compatible /v1/embeddings
+  # RAG embedding: hash=local(演示); http=OpenAI-compatible /v1/embeddings
+  # 默认走本地 qwen3-embedding-4b 服务（scripts/embed-server.py，:18090）；失败自动回退 hash
   rag:
-    provider: ${AMP_RAG_PROVIDER:hash}
-    http-base-url: ${AMP_RAG_BASE_URL:}
+    provider: ${AMP_RAG_PROVIDER:http}
+    http-base-url: ${AMP_RAG_BASE_URL:http://127.0.0.1:18090/v1}
     http-api-key: ${AMP_RAG_API_KEY:}
-    http-model: ${AMP_RAG_MODEL:text-embedding-3-small}
+    http-model: ${AMP_RAG_MODEL:qwen3-embedding-4b}
     http-dimensions: ${AMP_RAG_DIMS:}
     # Dify knowledge (Dataset API): enabled=true routes ingest/search to Dify
     dify:

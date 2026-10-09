@@ -2,6 +2,7 @@ package com.sinosoft.amp.openapi.web;
 
 import com.sinosoft.amp.openapi.ops.ReadinessSupport;
 import com.sinosoft.amp.openapi.security.AuthContext;
+import com.sinosoft.amp.openapi.security.IamProperties;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,9 +21,11 @@ import java.util.Map;
 public class HealthController {
 
     private final ReadinessSupport readiness;
+    private final IamProperties iamProperties;
 
-    public HealthController(ReadinessSupport readiness) {
+    public HealthController(ReadinessSupport readiness, IamProperties iamProperties) {
         this.readiness = readiness;
+        this.iamProperties = iamProperties;
     }
 
     /**
@@ -37,6 +40,21 @@ public class HealthController {
         body.put("redis", s.redis());
         body.put("replica", replicaId());
         return ResponseEntity.status(s.ready() ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
+    /**
+     * 公开 IAM 发现（免鉴权）：控制台据此决定是否走 OIDC 登录。
+     * 不暴露密钥；client_id 由前端本地配置（公共客户端）。
+     */
+    @GetMapping("/iam")
+    public Map<String, Object> iam() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("jwtEnabled", iamProperties.jwtEnabled());
+        body.put("issuerUri", iamProperties.jwtEnabled() ? iamProperties.issuerUri() : "");
+        body.put("jwkSetUri", iamProperties.jwtEnabled() ? iamProperties.jwkSetUri() : "");
+        body.put("trustHeaders", iamProperties.trustHeaders());
+        body.put("mode", iamProperties.jwtEnabled() ? "jwt+api-key" : "api-key");
+        return body;
     }
 
     /** 管理侧：实例内部状态（需要 Key）。 */

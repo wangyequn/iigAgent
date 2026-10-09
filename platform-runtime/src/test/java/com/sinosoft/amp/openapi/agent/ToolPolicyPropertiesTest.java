@@ -5,25 +5,18 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ToolPolicyPropertiesTest {
 
     @Test
-    void defaultModeDeniesExploratoryTools() {
+    void defaultDenyIsEmptyWhenDangerousFacesDisabled() {
+        // 探索/危险面（shell/filesystem/memory/session/web/agent_spawn）在构建期 disableXxx
+        // 摘除注册，工具不存在；对未注册工具下发 deny 只会触发 harness "unknown tool" WARN，
+        // 因此默认 deny 名单为空，封锁真实注册的工具用 extra-deny。
         ToolPolicyProperties p = new ToolPolicyProperties(null, null, null, false, false, false);
         assertTrue(p.allowlistMode() == false || ToolPolicyProperties.MODE_DENY.equalsIgnoreCase(p.mode()));
-        List<String> deny = p.effectiveDeny();
-        assertTrue(deny.contains("agent_spawn"));
-        assertTrue(deny.contains("web_search"));
-        assertTrue(deny.contains("shell_execute"));
-    }
-
-    @Test
-    void enablingAgentSpawnRemovesFromDeny() {
-        ToolPolicyProperties p = new ToolPolicyProperties("deny", null, null, true, false, false);
-        assertFalse(p.effectiveDeny().contains("agent_spawn"));
+        assertEquals(List.of(), p.effectiveDeny());
     }
 
     @Test
@@ -34,9 +27,9 @@ class ToolPolicyPropertiesTest {
     }
 
     @Test
-    void extraDenyAppended() {
+    void extraDenyIsTheBlockingChannel() {
         ToolPolicyProperties p = new ToolPolicyProperties("deny", null, List.of("custom_tool"), false, false, false);
-        assertTrue(p.effectiveDeny().contains("custom_tool"));
+        assertEquals(List.of("custom_tool"), p.effectiveDeny());
     }
 
     @Test
@@ -46,7 +39,7 @@ class ToolPolicyPropertiesTest {
         assertEquals(List.of("safe_lookup"), allowCfg.getAllow());
 
         var denyCfg = new ToolPolicyApplier(
-                new ToolPolicyProperties("deny", null, null, false, false, false)).apply();
-        assertTrue(denyCfg.getDeny().contains("agent_spawn"));
+                new ToolPolicyProperties("deny", null, List.of("dangerous_tool"), false, false, false)).apply();
+        assertEquals(List.of("dangerous_tool"), denyCfg.getDeny());
     }
 }

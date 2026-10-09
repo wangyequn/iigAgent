@@ -1,4 +1,5 @@
 import { http, getOpenKey, getAdminKey, headers } from './http'
+import { ensureFreshToken } from '@/auth/oidc'
 
 const open = () => ({ apiKey: getOpenKey() })
 const admin = () => ({ apiKey: getAdminKey() })
@@ -7,6 +8,7 @@ const withKey = (apiKey) => ({ apiKey: apiKey || getOpenKey() })
 /* ───────── Health ───────── */
 export const healthReady = () => http.get('/api/v1/health/ready')
 export const replicaInfo = () => http.get('/api/v1/health/replica')
+export const iamInfo = () => http.get('/api/v1/health/iam')
 
 /* ───────── Agents / Catalog ───────── */
 export const listAgents = (apiKey) => http.get('/api/v1/agents', withKey(apiKey))
@@ -45,6 +47,7 @@ export const confirmSession = (agentId, sessionId, body) =>
 
 /** POST SSE stream; onEvent(name, data, id) */
 export async function streamChat(agentId, body, onEvent, lastEventId, apiKey) {
+  await ensureFreshToken()
   const headersIn = headers(apiKey || getOpenKey())
   if (lastEventId) headersIn['Last-Event-ID'] = lastEventId
   const res = await fetch(`/api/v1/agents/${agentId}/messages:stream`, {
@@ -92,11 +95,12 @@ export function openSessionStream(agentId, sessionId, userId, onEvent, lastEvent
   const url =
     `/api/v1/agents/${agentId}/sessions/${sessionId}/stream` +
     `?userId=${encodeURIComponent(userId || '')}`
-  const headersIn = headers(getOpenKey())
-  if (lastEventId) headersIn['Last-Event-ID'] = lastEventId
 
   ;(async () => {
     try {
+      await ensureFreshToken()
+      const headersIn = headers(getOpenKey())
+      if (lastEventId) headersIn['Last-Event-ID'] = lastEventId
       const res = await fetch(url, { headers: headersIn, signal: ctrl.signal })
       if (!res.ok) throw new Error(`session stream ${res.status}`)
       const reader = res.body.getReader()
@@ -162,9 +166,12 @@ export async function uploadKnowledgeFiles(files) {
   const form = new FormData()
   for (const f of files) form.append('files', f)
   form.append('source', 'console')
+  await ensureFreshToken()
+  const uploadHeaders = headers(getAdminKey())
+  delete uploadHeaders['Content-Type']
   const res = await fetch('/api/v1/admin/knowledge/documents/file', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${getAdminKey()}` },
+    headers: uploadHeaders,
     body: form,
   })
   const text = await res.text()
@@ -266,6 +273,3 @@ export async function exportUsageCsv(from, to) {
   if (!res.ok) throw new Error(`export failed: ${res.status}`)
   return res.text()
 }
-
-/* ───────── Channel ───────── */
-export const channelWebhookPath = (type) => `/api/v1/channels/${type}/webhook`

@@ -2,10 +2,17 @@ package com.sinosoft.amp.openapi.agent;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 工具面默认收紧：denylist（默认）或 allowlist；shell/filesystem/subagent 默认关。
+ *
+ * <p>危险面（shell/filesystem/memory/session/web/agent_spawn 等）在构建期由
+ * disableXxx 摘除注册，工具根本不存在。deny 名单只对**真实注册**的工具才有意义——
+ * 对未注册工具下发 deny 会触发 harness ToolFilter 的 "unknown tool" WARN，
+ * 因此默认 deny 名单为空；需要封锁已注册工具时用 extra-deny（如 MCP 注入的工具）。
  */
 @ConfigurationProperties(prefix = "amp.tools")
 public record ToolPolicyProperties(
@@ -24,14 +31,6 @@ public record ToolPolicyProperties(
     public static final List<String> DEFAULT_ALLOW = List.of(
             "knowledge_search", "safe_lookup");
 
-    /** 探索/危险面默认关。 */
-    public static final List<String> DEFAULT_DENY = List.of(
-            "memory_search", "memory_get", "memory_save",
-            "session_search", "session_list", "session_history",
-            "list_files", "glob_files", "grep_files", "read_file",
-            "write_file", "edit_file", "execute", "shell_execute",
-            "web_search", "web_fetch", "agent_spawn", "load_skill_through_path");
-
     public ToolPolicyProperties {
         if (mode == null || mode.isBlank()) {
             mode = MODE_DENY;
@@ -46,25 +45,19 @@ public record ToolPolicyProperties(
         return (allow == null || allow.isEmpty()) ? DEFAULT_ALLOW : allow;
     }
 
+    /**
+     * deny 名单 = 配置的 extra-deny（仅应列出真实注册的工具）。
+     * shell/filesystem/subagent 的开关语义：false=构建期不注册（工具不可用，无需 deny）；
+     * true=注册并放行（若要封锁用 extra-deny）。
+     */
     public List<String> effectiveDeny() {
-        java.util.LinkedHashSet<String> deny = new java.util.LinkedHashSet<>(DEFAULT_DENY);
-        if (enableAgentSpawn) {
-            deny.remove("agent_spawn");
-        }
-        if (enableShell) {
-            deny.remove("execute");
-            deny.remove("shell_execute");
-        }
-        if (enableFilesystem) {
-            deny.remove("list_files");
-            deny.remove("glob_files");
-            deny.remove("grep_files");
-            deny.remove("read_file");
-            deny.remove("write_file");
-            deny.remove("edit_file");
-        }
+        Set<String> deny = new LinkedHashSet<>();
         if (extraDeny != null) {
-            deny.addAll(extraDeny);
+            for (String tool : extraDeny) {
+                if (tool != null && !tool.isBlank()) {
+                    deny.add(tool.trim());
+                }
+            }
         }
         return List.copyOf(deny);
     }

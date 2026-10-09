@@ -94,4 +94,42 @@ class ApiKeyAuthFilterTest {
         assertTrue(ApiKeyAuthFilter.isAdminPath("/api/v1/admin/skills"));
         assertFalse(ApiKeyAuthFilter.isAdminPath("/api/v1/agents/demo/messages"));
     }
+
+    @Test
+    void unknownBearerPassesThroughWhenJwtEnabled() throws Exception {
+        ApiKeyAuthFilter jwtFilter = new ApiKeyAuthFilter(
+                props, new IamProperties("https://idp.example/realms/amp", "", false));
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/agents/demo/messages");
+        request.addHeader("Authorization", "Bearer some.jwt.token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        final boolean[] continued = {false};
+        MockFilterChain chain = new MockFilterChain() {
+            @Override
+            public void doFilter(jakarta.servlet.ServletRequest req, jakarta.servlet.ServletResponse res) {
+                continued[0] = true;
+            }
+        };
+        jwtFilter.doFilter(request, response, chain);
+        assertTrue(continued[0]);
+        assertNull(AuthContext.get());
+        assertEquals(200, response.getStatus());
+    }
+
+    @Test
+    void knownKeyStillPreferredWhenJwtEnabled() throws Exception {
+        ApiKeyAuthFilter jwtFilter = new ApiKeyAuthFilter(
+                props, new IamProperties("https://idp.example/realms/amp", "", false));
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/agents/demo/messages");
+        request.addHeader("Authorization", "Bearer test-key");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        final String[] tenant = {null};
+        MockFilterChain chain = new MockFilterChain() {
+            @Override
+            public void doFilter(jakarta.servlet.ServletRequest req, jakarta.servlet.ServletResponse res) {
+                tenant[0] = AuthContext.requireTenantId();
+            }
+        };
+        jwtFilter.doFilter(request, response, chain);
+        assertEquals("acme", tenant[0]);
+    }
 }

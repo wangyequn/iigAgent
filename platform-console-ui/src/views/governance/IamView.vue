@@ -66,7 +66,7 @@ onMounted(load)
 </script>
 
 <template>
-  <PageHeader title="IAM / RBAC" desc="管理用户角色。admin scope 的 Key 直接放行；业务请求头 X-User-Id / X-User-Roles。">
+  <PageHeader title="IAM / RBAC" desc="管理用户角色。人轨 JWT（OIDC）与机器 API Key 双轨；admin scope 的 Key 直接放行。默认不信任 X-User-Id / X-User-Roles 自报头（amp.iam.trust-headers）。">
     <template #actions>
       <el-button @click="load">刷新</el-button>
     </template>

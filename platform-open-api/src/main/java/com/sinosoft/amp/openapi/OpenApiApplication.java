@@ -14,6 +14,7 @@ import com.sinosoft.amp.openapi.ops.LokiProperties;
 import com.sinosoft.amp.openapi.sandbox.SandboxProperties;
 import com.sinosoft.amp.openapi.fs.FsProperties;
 import com.sinosoft.amp.openapi.security.AuthProperties;
+import com.sinosoft.amp.openapi.security.IamProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -21,7 +22,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @EnableConfigurationProperties({
-        AuthProperties.class, AgentProperties.class, ToolPolicyProperties.class,
+        AuthProperties.class, IamProperties.class, AgentProperties.class, ToolPolicyProperties.class,
         EmbeddingProperties.class, DifyProperties.class, SkillCanaryProperties.class,
         Mem0Properties.class,
         OpsProperties.class, NacosProperties.class, NacosAiProperties.class, OtelProperties.class,

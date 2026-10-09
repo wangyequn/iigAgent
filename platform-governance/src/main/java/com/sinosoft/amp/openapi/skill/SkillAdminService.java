@@ -89,9 +89,11 @@ public class SkillAdminService {
 
     /**
      * 审核通过：写 skill_review，状态 APPROVED，驱逐该租户 Agent 实例缓存。
+     * 空壳/占位内容禁止通过（Nacos 等外部源导入的卡片只带占位说明，须补正文后再审）。
      */
     public SkillRecord approve(String tenantId, String skillId, String reviewer, String note) {
         SkillRecord skill = requireOwned(tenantId, skillId);
+        requireSubstantiveContent(skill);
         if (SkillRecord.APPROVED.equals(skill.status())) {
             return skill;
         }
@@ -102,6 +104,18 @@ public class SkillAdminService {
         evictAndBroadcast(tenantId, "skill-approve:" + skillId);
         log.info("skill approved id={} name={} evicted-instances tenant={}", skillId, skill.name(), tenantId);
         return get(skillId);
+    }
+
+    /** 拒绝空内容与占位内容（如 Nacos 导入的 "attach content before approve" 卡片）。 */
+    private static void requireSubstantiveContent(SkillRecord skill) {
+        String content = skill.skillContent() == null ? "" : skill.skillContent();
+        String stripped = content.strip();
+        boolean placeholder = stripped.contains("attach content before approve")
+                || stripped.lines().allMatch(l -> l.isBlank() || l.stripLeading().startsWith("#"));
+        if (stripped.isBlank() || placeholder) {
+            throw new CatalogException("SKILL_CONTENT_PLACEHOLDER",
+                    "skill content is empty or placeholder; attach real content before approve");
+        }
     }
 
     public SkillRecord reject(String tenantId, String skillId, String reviewer, String note) {

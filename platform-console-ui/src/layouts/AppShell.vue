@@ -15,6 +15,7 @@ const identityOpen = ref(false)
 const notifyOpen = ref(false)
 const commandQuery = ref('')
 const commandInput = ref(null)
+const origin = location.origin
 
 const navGroups = [
   {
@@ -30,8 +31,8 @@ const navGroups = [
     items: [
       { path: '/agents', name: 'agents', icon: 'UserFilled', label: 'Agent 列表' },
       { path: '/skills', name: 'skills', icon: 'Grid', label: '技能市场' },
-      { path: '/workflows', name: 'workflows', icon: 'Operation', label: '编排 Workflow' },
-      { path: '/teams', name: 'teams', icon: 'Connection', label: 'Team 协作' },
+      { path: '/workflows', name: 'workflows', icon: 'Operation', label: '编排 Workflow（待开发）' },
+      { path: '/teams', name: 'teams', icon: 'Connection', label: 'Team 协作（待开发）' },
     ],
   },
   {
@@ -39,7 +40,6 @@ const navGroups = [
     items: [
       { path: '/governance/permissions', name: 'permissions', icon: 'Lock', label: '权限与模式' },
       { path: '/governance/tools', name: 'tools', icon: 'Tools', label: 'MCP 与工具' },
-      { path: '/governance/channels', name: 'channels', icon: 'Promotion', label: '渠道 Channel' },
       { path: '/governance/external', name: 'external', icon: 'Link', label: 'External Agent' },
       { path: '/governance/iam', name: 'iam', icon: 'Avatar', label: 'IAM / RBAC' },
     ],
@@ -124,7 +124,7 @@ async function refreshPending() {
 
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
-  await store.refreshHealth()
+  await Promise.all([store.refreshHealth(), store.refreshOidc()])
   refreshPending()
 })
 
@@ -182,6 +182,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             <kbd>Ctrl K</kbd>
           </button>
 
+          <el-tag v-if="store.oidcUser" type="success" size="small" effect="light" round>
+            JWT · {{ store.oidcUser.name || store.oidcUser.userId }}
+          </el-tag>
           <el-tag :type="readyOk ? 'success' : 'danger'" size="small" effect="light" round>
             {{ readyOk ? '服务就绪' : '未就绪' }}
           </el-tag>
@@ -251,11 +254,52 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     </el-dialog>
 
     <!-- Identity drawer -->
-    <el-drawer v-model="identityOpen" title="身份与上下文" size="380px">
+    <el-drawer v-model="identityOpen" title="身份与上下文" size="400px">
       <el-form label-position="top">
+        <div class="flex-between" style="margin-bottom:8px">
+          <b>人轨 · OIDC / JWT</b>
+          <el-tag size="small" :type="store.iamMode?.jwtEnabled ? 'success' : 'info'">
+            {{ store.iamMode?.jwtEnabled ? 'JWT 已启用' : 'JWT 未配置' }}
+          </el-tag>
+        </div>
+        <template v-if="store.oidcUser">
+          <el-descriptions :column="1" size="small" border>
+            <el-descriptions-item label="用户">{{ store.oidcUser.name || store.oidcUser.userId }}</el-descriptions-item>
+            <el-descriptions-item label="tenant">{{ store.oidcUser.tenantId || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="角色">
+              <el-tag v-for="r in store.oidcUser.roles || []" :key="r" size="small" style="margin:2px">{{ r }}</el-tag>
+              <span v-if="!(store.oidcUser.roles || []).length">—</span>
+            </el-descriptions-item>
+          </el-descriptions>
+          <el-button style="margin-top:10px" @click="store.logoutOidc()">退出 OIDC</el-button>
+        </template>
+        <template v-else>
+          <el-form-item label="Issuer（OIDC）">
+            <el-input
+              v-model="store.oidcCfg.issuer"
+              placeholder="http://127.0.0.1:8180/realms/amp"
+              @change="store.persistOidcCfg()"
+            />
+          </el-form-item>
+          <el-form-item label="Client ID">
+            <el-input v-model="store.oidcCfg.clientId" placeholder="amp-console" @change="store.persistOidcCfg()" />
+          </el-form-item>
+          <el-button type="primary" :disabled="!store.oidcCfg.issuer" @click="store.loginOidc()">
+            OIDC 登录（PKCE）
+          </el-button>
+          <div class="t-faint" style="margin-top:8px">
+            回调地址 <span class="mono">{{ origin }}/auth/callback</span>（需在 IdP 客户端登记）
+          </div>
+        </template>
+
+        <el-divider />
+        <div class="flex-between" style="margin-bottom:8px">
+          <b>机器轨 · API Key</b>
+          <el-tag size="small" type="warning">双轨</el-tag>
+        </div>
         <el-form-item label="Open API Key">
           <el-input v-model="store.auth.openKey" placeholder="s0-demo-key" show-password />
-          <div class="t-faint" style="margin-top:6px">业务对话 / 会话接口（open scope）</div>
+          <div class="t-faint" style="margin-top:6px">业务对话 / 会话接口（open scope）；JWT 登录后优先用 token</div>
         </el-form-item>
         <el-form-item label="Admin API Key">
           <el-input v-model="store.auth.adminKey" placeholder="s0-admin-key" show-password />
@@ -267,13 +311,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         </el-form-item>
         <el-form-item label="userId">
           <el-input v-model="store.userId" placeholder="u1" />
+          <div class="t-faint" style="margin-top:6px">会话业务 userId（body），与 OIDC sub 独立</div>
         </el-form-item>
         <el-form-item label="sessionId">
           <el-input v-model="store.sessionId" placeholder="agt_ui_demo1" />
           <div class="t-faint" style="margin-top:6px">需匹配 <span class="mono">[A-Za-z0-9_-]{1,128}</span></div>
         </el-form-item>
         <el-alert type="info" :closable="false" show-icon>
-          密钥仅保存在本机 localStorage，不会上传。
+          token / 密钥仅保存在本机 localStorage。默认不发送 X-User-Id / X-User-Roles 自报头。
         </el-alert>
       </el-form>
     </el-drawer>
