@@ -47,7 +47,7 @@ public class AdminCatalogController {
     @PostMapping("/agents")
     public Map<String, Object> createAgent(@Valid @RequestBody CreateAgentRequest request) {
         String tenant = AuthContext.requireTenantId();
-        AgentRecord agent = catalogRuntime.createAgent(tenant, request.agentId(), request.name());
+        AgentRecord agent = catalogRuntime.createAgent(tenant, request.agentId(), request.name(), request.systemCode());
         return agentBody(agent, null);
     }
 
@@ -143,6 +143,7 @@ public class AdminCatalogController {
         body.put("name", agent.name());
         body.put("status", agent.status().name());
         body.put("releaseVersion", release);
+        body.put("systemCode", agent.systemCode());
         return body;
     }
 
@@ -184,7 +185,8 @@ public class AdminCatalogController {
 
     public record CreateAgentRequest(
             @NotBlank String agentId,
-            String name
+            String name,
+            String systemCode
     ) {
     }
 

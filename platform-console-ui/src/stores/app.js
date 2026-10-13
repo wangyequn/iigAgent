@@ -9,6 +9,7 @@ import {
   logout as oidcLogout,
   saveOidcConfig,
 } from '@/auth/oidc'
+import { clearJeecgToken, getJeecgToken, logoutAll } from '@/auth/platformLogin'
 
 export const useAppStore = defineStore('app', () => {
   const auth = ref({
@@ -63,6 +64,23 @@ export const useAppStore = defineStore('app', () => {
     notify({ type: 'info', title: '已退出 OIDC', message: '将回退到 API Key 机器轨' })
   }
 
+  function logout() {
+    try {
+      logoutAll()
+      oidcLogout()
+    } catch (e) {
+      console.warn('logout clear failed', e)
+    }
+    oidcUser.value = null
+    try {
+      notify({ type: 'info', title: '已退出登录', message: '本机登录态已清除' })
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const jeecgUser = () => getJeecgToken()
+
   function persistOidcCfg() {
     saveOidcConfig(oidcCfg.value)
   }
@@ -116,6 +134,8 @@ export const useAppStore = defineStore('app', () => {
     refreshOidc,
     loginOidc,
     logoutOidc,
+    logout,
+    jeecgUser,
     persistOidcCfg,
     refreshHealth,
     notify,

@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { ElMessage } from 'element-plus'
+import { logoutAndRedirect } from '@/auth/sso'
 import { listSessionApprovals, listInbox } from '@/api'
 import ConsoleBot from '@/components/bot/ConsoleBot.vue'
 
@@ -16,6 +17,13 @@ const notifyOpen = ref(false)
 const commandQuery = ref('')
 const commandInput = ref(null)
 const origin = location.origin
+
+function onLogout() {
+  identityOpen.value = false
+  ElMessage.success('已退出登录')
+  // 标准 SSO：清票并回到登录（未登录无法再进业务）
+  logoutAndRedirect()
+}
 
 const navGroups = [
   {
@@ -39,6 +47,7 @@ const navGroups = [
     label: '治理中心',
     items: [
       { path: '/governance/permissions', name: 'permissions', icon: 'Lock', label: '权限与模式' },
+      { path: '/governance/systems', name: 'systems', icon: 'OfficeBuilding', label: '业务系统' },
       { path: '/governance/tools', name: 'tools', icon: 'Tools', label: 'MCP 与工具' },
       { path: '/governance/external', name: 'external', icon: 'Link', label: 'External Agent' },
       { path: '/governance/iam', name: 'iam', icon: 'Avatar', label: 'IAM / RBAC' },
@@ -305,6 +314,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           <el-input v-model="store.auth.adminKey" placeholder="s0-admin-key" show-password />
           <div class="t-faint" style="margin-top:6px">治理 / 运维 / 审计 / 配额（admin scope）</div>
         </el-form-item>
+        <el-divider />
+        <div class="flex-between" style="margin-bottom:8px">
+          <b>登录会话</b>
+          <el-button type="danger" size="small" plain @click="onLogout">退出登录</el-button>
+        </div>
+        <div class="t-faint">
+          退出会清除本机 Jeecg / OIDC 票据；API Key 配置保留。可从平台重新登录进入。
+        </div>
         <el-divider />
         <el-form-item label="当前 Agent">
           <el-input v-model="store.agentId" placeholder="demo" />

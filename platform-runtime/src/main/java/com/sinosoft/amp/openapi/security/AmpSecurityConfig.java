@@ -27,7 +27,7 @@ import java.io.IOException;
  */
 @Configuration
 @EnableWebSecurity
-@EnableConfigurationProperties({IamProperties.class, AuthProperties.class})
+@EnableConfigurationProperties({IamProperties.class, AuthProperties.class, JeecgAuthProperties.class})
 public class AmpSecurityConfig {
 
     @Bean
@@ -60,6 +60,11 @@ public class AmpSecurityConfig {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(new KeycloakRoleConverter());
         return converter;
+    }
+
+    @Bean
+    public JeecgAuthClient jeecgAuthClient(JeecgAuthProperties jeecgAuthProperties) {
+        return new JeecgAuthClient(jeecgAuthProperties);
     }
 
     @Configuration

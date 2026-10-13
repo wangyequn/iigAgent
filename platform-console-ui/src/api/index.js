@@ -1,5 +1,4 @@
 import { http, getOpenKey, getAdminKey, headers } from './http'
-import { ensureFreshToken } from '@/auth/oidc'
 
 const open = () => ({ apiKey: getOpenKey() })
 const admin = () => ({ apiKey: getAdminKey() })
@@ -47,8 +46,7 @@ export const confirmSession = (agentId, sessionId, body) =>
 
 /** POST SSE stream; onEvent(name, data, id) */
 export async function streamChat(agentId, body, onEvent, lastEventId, apiKey) {
-  await ensureFreshToken()
-  const headersIn = headers(apiKey || getOpenKey())
+  const headersIn = headers(apiKey)
   if (lastEventId) headersIn['Last-Event-ID'] = lastEventId
   const res = await fetch(`/api/v1/agents/${agentId}/messages:stream`, {
     method: 'POST',
@@ -98,8 +96,7 @@ export function openSessionStream(agentId, sessionId, userId, onEvent, lastEvent
 
   ;(async () => {
     try {
-      await ensureFreshToken()
-      const headersIn = headers(getOpenKey())
+      const headersIn = headers()
       if (lastEventId) headersIn['Last-Event-ID'] = lastEventId
       const res = await fetch(url, { headers: headersIn, signal: ctrl.signal })
       if (!res.ok) throw new Error(`session stream ${res.status}`)
@@ -166,8 +163,7 @@ export async function uploadKnowledgeFiles(files) {
   const form = new FormData()
   for (const f of files) form.append('files', f)
   form.append('source', 'console')
-  await ensureFreshToken()
-  const uploadHeaders = headers(getAdminKey())
+  const uploadHeaders = headers()
   delete uploadHeaders['Content-Type']
   const res = await fetch('/api/v1/admin/knowledge/documents/file', {
     method: 'POST',
@@ -197,6 +193,8 @@ export const listPermissions = (agentId) =>
   http.get('/api/v1/admin/governance/permissions', { ...admin(), query: { agentId } })
 export const upsertPermission = (body) =>
   http.post('/api/v1/admin/governance/permissions', body, admin())
+export const upsertPermissionsBatch = (items) =>
+  http.post('/api/v1/admin/governance/permissions/batch', { items }, admin())
 export const deletePermission = (body) =>
   http.del('/api/v1/admin/governance/permissions', { ...admin(), body })
 export const setPermissionMode = (body) =>
@@ -205,11 +203,40 @@ export const listMcpServers = () => http.get('/api/v1/admin/mcp-servers', admin(
 export const registerMcpServer = (body) => http.post('/api/v1/admin/mcp-servers', body, admin())
 export const mcpTest = (name) =>
   http.post(`/api/v1/admin/mcp-servers/${encodeURIComponent(name)}/test`, {}, admin())
+export const listBusinessSystems = () => http.get('/api/v1/admin/systems', admin())
+export const createBusinessSystem = (body) => http.post('/api/v1/admin/systems', body, admin())
+export const updateBusinessSystem = (code, body) =>
+  http.put(`/api/v1/admin/systems/${encodeURIComponent(code)}`, body, admin())
+export const deleteBusinessSystem = (code) =>
+  http.del(`/api/v1/admin/systems/${encodeURIComponent(code)}`, admin())
 export const listBusinessTools = () => http.get('/api/v1/admin/business-tools', admin())
+export const getBusinessTool = (toolName) =>
+  http.get(`/api/v1/admin/business-tools/${encodeURIComponent(toolName)}`, admin())
 export const registerBusinessTool = (body) =>
   http.post('/api/v1/admin/business-tools', body, admin())
-export const deleteBusinessTool = (toolName) =>
-  http.del(`/api/v1/admin/business-tools/${encodeURIComponent(toolName)}`, admin())
+export const patchBusinessTool = (toolName, body) =>
+  http.patch(`/api/v1/admin/business-tools/${encodeURIComponent(toolName)}`, body, admin())
+export const toolLifecycle = (toolName, body) =>
+  http.post(`/api/v1/admin/business-tools/${encodeURIComponent(toolName)}/lifecycle`, body, admin())
+export const testBusinessTool = (toolName) =>
+  http.post(`/api/v1/admin/business-tools/${encodeURIComponent(toolName)}/test`, {}, admin())
+export const cloneBusinessTool = (toolName, body) =>
+  http.post(`/api/v1/admin/business-tools/${encodeURIComponent(toolName)}/clone`, body || {}, admin())
+export const deleteBusinessTool = (toolName, hard = false) =>
+  http.del(`/api/v1/admin/business-tools/${encodeURIComponent(toolName)}${hard ? '?hard=true' : ''}`, admin())
+export const listToolBindings = (agentId) =>
+  http.get(`/api/v1/admin/agents/${encodeURIComponent(agentId)}/tool-bindings`, admin())
+export const upsertToolBinding = (agentId, body) =>
+  http.post(`/api/v1/admin/agents/${encodeURIComponent(agentId)}/tool-bindings`, body, admin())
+export const deleteToolBinding = (agentId, toolName) =>
+  http.del(
+    `/api/v1/admin/agents/${encodeURIComponent(agentId)}/tool-bindings/${encodeURIComponent(toolName)}`,
+    admin(),
+  )
+export const putToolSecret = (refName, body) =>
+  http.put(`/api/v1/admin/tool-credentials/${encodeURIComponent(refName)}`, body, admin())
+export const deleteToolSecret = (refName) =>
+  http.del(`/api/v1/admin/tool-credentials/${encodeURIComponent(refName)}`, admin())
 
 /* ───────── IAM ───────── */
 export const listIamRoles = () => http.get('/api/v1/admin/iam/roles', admin())
@@ -247,8 +274,16 @@ export const lokiSearch = (sessionId, limit = 30) =>
   http.get('/api/v1/admin/loki/search', { ...admin(), query: { sessionId, limit } })
 export const getConfig = () => http.get('/api/v1/admin/config', admin())
 export const updateConfig = (patch) => http.post('/api/v1/admin/config', patch, admin())
-export const listAudit = (limit = 50) =>
-  http.get('/api/v1/admin/audit', { ...admin(), query: { limit } })
+export const listAudit = (limit = 50, filters = {}) =>
+  http.get('/api/v1/admin/audit', {
+    ...admin(),
+    query: {
+      limit,
+      toolName: filters.toolName,
+      resourceId: filters.resourceId,
+      action: filters.action,
+    },
+  })
 export const sandboxStatus = () => http.get('/api/v1/admin/sandbox/status', admin())
 export const sandboxExec = (command) => http.post('/api/v1/admin/sandbox/exec', { command }, admin())
 export const fsStatus = () => http.get('/api/v1/admin/fs/status', admin())

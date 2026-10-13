@@ -21,10 +21,14 @@ public class AdminAuditController {
     }
 
     @GetMapping
-    public Map<String, Object> recent(@RequestParam(defaultValue = "50") int limit) {
+    public Map<String, Object> recent(
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(required = false) String toolName,
+            @RequestParam(required = false) String resourceId,
+            @RequestParam(required = false) String action) {
         AuthContext.requireAdmin();
         String tenant = AuthContext.requireTenantId();
-        List<Map<String, Object>> items = auditLogService.recent(tenant, limit);
+        List<Map<String, Object>> items = auditLogService.recent(tenant, limit, toolName, resourceId, action);
         return Map.of("tenantId", tenant, "items", items);
     }
 }

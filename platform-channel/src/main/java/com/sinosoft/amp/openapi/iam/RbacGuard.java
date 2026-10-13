@@ -5,6 +5,7 @@ import com.sinosoft.amp.openapi.security.AuthProperties;
 import com.sinosoft.amp.openapi.security.IamProperties;
 import com.sinosoft.amp.openapi.security.JwtAuthSupport;
 import com.sinosoft.amp.openapi.security.JwtIdentity;
+import com.sinosoft.amp.openapi.security.JeecgIdentity;
 import com.sinosoft.amp.openapi.security.UnauthorizedException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -47,16 +48,29 @@ public class RbacGuard {
         if (entry != null && entry.allowsScope(AuthProperties.SCOPE_ADMIN)) {
             return;
         }
+        JeecgIdentity jeecg = AuthContext.currentJeecg();
+        if (jeecg != null) {
+            // 人轨优先：本部署 IdP=pc_platform；权限码是业务码，不能当 iam:admin 用
+            if (isPlatformAdmin(jeecg) || jeecg.hasPerm(permission)) {
+                return;
+            }
+            String userId = jeecg.username();
+            Set<String> roles = effectiveJeecgRoles(tenant, jeecg);
+            if (iam.hasPermission(tenant, userId, roles, permission)) {
+                return;
+            }
+            deny(userId, "jeecg", permission, roles);
+        }
         JwtIdentity jwt = JwtAuthSupport.current();
         if (jwt != null) {
             Set<String> roles = normalize(jwt.roles());
             if (roles.isEmpty()) {
                 roles = Set.of(IamService.ROLE_AGENT_CALLER);
             }
-            if (!iam.hasPermission(tenant, jwt.userId(), roles, permission)) {
-                throw new UnauthorizedException("RBAC_DENIED: missing permission " + permission);
+            if (iam.hasPermission(tenant, jwt.userId(), roles, permission)) {
+                return;
             }
-            return;
+            deny(jwt.userId(), "jwt", permission, roles);
         }
         String userId = currentUserId();
         Set<String> roles = currentRoles(tenant, userId);
@@ -72,6 +86,10 @@ public class RbacGuard {
             if (!roles.isEmpty()) {
                 return roles;
             }
+        }
+        JeecgIdentity jeecg = AuthContext.currentJeecg();
+        if (jeecg != null) {
+            return effectiveJeecgRoles(tenantId, jeecg);
         }
         Set<String> roles = new LinkedHashSet<>();
         if (trustHeaders) {
@@ -98,6 +116,10 @@ public class RbacGuard {
         if (jwt != null && jwt.userId() != null && !jwt.userId().isBlank()) {
             return jwt.userId();
         }
+        JeecgIdentity jeecg = AuthContext.currentJeecg();
+        if (jeecg != null && jeecg.username() != null && !jeecg.username().isBlank()) {
+            return jeecg.username();
+        }
         if (trustHeaders) {
             String uid = header(HEADER_USER);
             if (uid != null && !uid.isBlank()) {
@@ -109,6 +131,43 @@ public class RbacGuard {
 
     public boolean isTrustHeaders() {
         return trustHeaders;
+    }
+
+    /**
+     * Jeecg 用户有效角色 = IdP 角色 + 平台 IAM 授权 + 平台管理员标记。
+     * loginByToken 往往 roles 为空，权限码是业务按钮码，不能直接当 iam:admin 用。
+     */
+    Set<String> effectiveJeecgRoles(String tenantId, JeecgIdentity jeecg) {
+        Set<String> roles = new LinkedHashSet<>(normalize(jeecg.roles()));
+        roles.addAll(iam.rolesOf(tenantId, jeecg.username()));
+        if (isPlatformAdmin(jeecg)) {
+            roles.add(IamService.ROLE_TENANT_ADMIN);
+        }
+        if (roles.isEmpty()) {
+            roles.add(IamService.ROLE_AGENT_CALLER);
+        }
+        return roles;
+    }
+
+    /**
+     * pc_platform 用户/角色管理员 → 中台 tenant_admin。
+     * 标记：administratorsId 角色 / 用户角色维护按钮码。
+     */
+    static boolean isPlatformAdmin(JeecgIdentity jeecg) {
+        return jeecg.hasAnyRole("admin", "tenant_admin", "superadmin")
+                || jeecg.hasPerm("iam:admin")
+                || jeecg.hasPerm("platform:user:setroles")
+                || jeecg.hasPerm("platform:user:role")
+                || jeecg.hasPerm("platform:user:add")
+                || jeecg.hasPerm("system:role:add")
+                || jeecg.hasPerm("system:user:add");
+    }
+
+    private void deny(String userId, String source, String permission, Set<String> roles) {
+        org.slf4j.LoggerFactory.getLogger(RbacGuard.class)
+                .warn("RBAC_DENIED user={} source={} permission={} roles={}", userId, source, permission, roles);
+        throw new UnauthorizedException("RBAC_DENIED: missing permission " + permission
+                + " (user=" + userId + ", roles=" + roles + ")");
     }
 
     private static Set<String> normalize(Set<String> roles) {

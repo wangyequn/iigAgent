@@ -3,6 +3,7 @@ package com.sinosoft.amp.openapi.iam;
 import com.sinosoft.amp.openapi.security.AuthContext;
 import com.sinosoft.amp.openapi.security.AuthProperties;
 import com.sinosoft.amp.openapi.security.IamProperties;
+import com.sinosoft.amp.openapi.security.JeecgIdentity;
 import com.sinosoft.amp.openapi.security.JwtAuthSupport;
 import com.sinosoft.amp.openapi.security.UnauthorizedException;
 import org.junit.jupiter.api.AfterEach;
@@ -148,5 +149,39 @@ class IamRbacTest {
 
         assertEquals(Set.of("agent_caller"), trusting.currentRoles("acme", "bob"));
         assertThrows(UnauthorizedException.class, () -> trusting.require("iam:admin"));
+    }
+
+    @Test
+    void jeecgPlatformRoleManagerPassesIamAdmin() {
+        AuthContext.setJeecg(new JeecgIdentity("stc_sinosoft", "cid", Set.of("platform:user:setroles"), Set.of()));
+        guard.require("iam:admin");
+        guard.require("admin:read");
+    }
+
+    @Test
+    void jeecgAdminRoleFromAdministratorsIdPasses() {
+        AuthContext.setJeecg(new JeecgIdentity("stc_sinosoft", "cid", Set.of(), Set.of("admin")));
+        guard.require("iam:admin");
+    }
+
+    @Test
+    void jeecgBusinessPermsAloneDeniedIamAdmin() {
+        AuthContext.setJeecg(new JeecgIdentity("ops_user", "cid", Set.of("order:query", "system:dict:add"), Set.of()));
+        assertThrows(UnauthorizedException.class, () -> guard.require("iam:admin"));
+    }
+
+    @Test
+    void jeecgIamAssignedRoleGrantsPermission() {
+        AuthContext.setJeecg(new JeecgIdentity("bob", "cid", Set.of(), Set.of()));
+        iam.assignRole("acme", "bob", IamService.ROLE_DEVELOPER);
+        guard.require("orch:write");
+        assertThrows(UnauthorizedException.class, () -> guard.require("iam:admin"));
+    }
+
+    @Test
+    void iamAdminRoleIsSuperuser() {
+        assertTrue(iam.hasPermission("acme", "root", Set.of("admin"), "iam:admin"));
+        assertTrue(iam.hasPermission("acme", "root", Set.of("ADMIN"), "billing:write"));
+        assertTrue(iam.hasPermission("acme", "root", Set.of("superadmin"), "iam:admin"));
     }
 }

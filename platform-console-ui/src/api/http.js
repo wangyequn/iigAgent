@@ -1,5 +1,5 @@
 /** Unified HTTP helpers with platform error codes. */
-import { getAccessToken, ensureFreshToken } from '@/auth/oidc'
+import { getAccessToken as getSsoToken } from '@/auth/sso'
 
 const STORAGE_KEY = 'amp.console.auth'
 
@@ -24,15 +24,18 @@ export function getAdminKey() {
 }
 
 /**
- * Authorization 头：人轨 JWT 优先，未登录回退机器 API Key。
- * @param {string} [apiKey] 显式 Key（流式/文件上传等）
- * @param {{ forceKey?: boolean }} [opts] forceKey=true 时强制用 Key（机器轨）
+ * 标准 SSO：只用平台 access_token。
+ * 未登录不回落到 API Key，避免「退出后仍能调接口」。
  */
 export function headers(apiKey, opts = {}) {
-  const jwt = opts.forceKey ? null : getAccessToken()
-  const token = jwt || apiKey || getOpenKey()
+  const token = getSsoToken()
+  if (!token) {
+    // 仍未登录：请求会 401，由路由守卫跳登录
+    return { 'Content-Type': 'application/json' }
+  }
   return {
     Authorization: `Bearer ${token}`,
+    'X-Access-Token': token,
     'Content-Type': 'application/json',
   }
 }
@@ -60,12 +63,9 @@ async function request(method, path, { apiKey, body, query, raw, forceKey } = {}
       ).toString()}`
     : ''
   const url = path + qs
-  if (!forceKey) {
-    await ensureFreshToken()
-  }
   const res = await fetch(url, {
     method,
-    headers: headers(apiKey || getOpenKey(), { forceKey }),
+    headers: headers(apiKey, { forceKey }),
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) {
@@ -86,6 +86,7 @@ export const http = {
   get: (path, opts) => request('GET', path, opts),
   post: (path, body, opts) => request('POST', path, { ...opts, body }),
   put: (path, body, opts) => request('PUT', path, { ...opts, body }),
+  patch: (path, body, opts) => request('PATCH', path, { ...opts, body }),
   del: (path, opts) => request('DELETE', path, opts),
 }
 

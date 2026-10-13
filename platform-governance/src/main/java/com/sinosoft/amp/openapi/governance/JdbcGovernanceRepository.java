@@ -110,7 +110,7 @@ public class JdbcGovernanceRepository implements GovernanceRepository {
     public List<McpServerRecord> listMcpServers(String tenantId) {
         return jdbc.query(
                 """
-                SELECT tenant_id, name, transport, command, args, url, enable_tools, status, source
+                SELECT tenant_id, name, transport, command, args, url, enable_tools, status, source, headers_json
                 FROM mcp_server WHERE tenant_id = :tenantId ORDER BY name
                 """,
                 new MapSqlParameterSource().addValue("tenantId", tenantId),
@@ -118,7 +118,8 @@ public class JdbcGovernanceRepository implements GovernanceRepository {
                         rs.getString("tenant_id"), rs.getString("name"), rs.getString("transport"),
                         rs.getString("command"), rs.getString("args"), rs.getString("url"),
                         rs.getString("enable_tools"), rs.getString("status"),
-                        rs.getString("source")));
+                        rs.getString("source"),
+                        rs.getString("headers_json")));
     }
 
     @Override
@@ -138,8 +139,8 @@ public class JdbcGovernanceRepository implements GovernanceRepository {
                 : (r.source() == null ? McpServerRecord.SOURCE_LOCAL : r.source());
         jdbc.update(
                 """
-                INSERT INTO mcp_server (tenant_id, name, transport, command, args, url, enable_tools, status, source, created_at)
-                VALUES (:tenantId, :name, :transport, :command, :args, :url, :enableTools, :status, :source, :createdAt)
+                INSERT INTO mcp_server (tenant_id, name, transport, command, args, url, enable_tools, status, source, headers_json, created_at)
+                VALUES (:tenantId, :name, :transport, :command, :args, :url, :enableTools, :status, :source, :headersJson, :createdAt)
                 ON CONFLICT (tenant_id, name) DO UPDATE
                 SET transport = EXCLUDED.transport,
                     command = EXCLUDED.command,
@@ -147,7 +148,8 @@ public class JdbcGovernanceRepository implements GovernanceRepository {
                     url = EXCLUDED.url,
                     enable_tools = EXCLUDED.enable_tools,
                     status = EXCLUDED.status,
-                    source = EXCLUDED.source
+                    source = EXCLUDED.source,
+                    headers_json = EXCLUDED.headers_json
                 """,
                 new MapSqlParameterSource()
                         .addValue("tenantId", r.tenantId())
@@ -159,27 +161,115 @@ public class JdbcGovernanceRepository implements GovernanceRepository {
                         .addValue("enableTools", r.enableTools())
                         .addValue("status", r.status() == null ? McpServerRecord.STATUS_REGISTERED : r.status())
                         .addValue("source", source)
+                        .addValue("headersJson", r.headersJson() == null ? "" : r.headersJson())
                         .addValue("createdAt", ts(Instant.now())));
+    }
+
+    private static final String TOOL_COLS =
+            "tenant_id, tool_name, description, kind, status, config, version, env, owner, secret_ref, "
+                    + "timeout_ms, max_retries, rate_limit_qps, tags, updated_by, updated_at, config_schema_ver, deprecated_reason, system_code";
+
+    private static BusinessToolRecord mapTool(java.sql.ResultSet rs, int i) throws java.sql.SQLException {
+        return new BusinessToolRecord(
+                rs.getString("tenant_id"),
+                rs.getString("tool_name"),
+                rs.getString("description"),
+                rs.getString("kind"),
+                rs.getString("status"),
+                rs.getString("config"),
+                (Integer) rs.getObject("version"),
+                rs.getString("env"),
+                rs.getString("owner"),
+                rs.getString("secret_ref"),
+                (Integer) rs.getObject("timeout_ms"),
+                (Integer) rs.getObject("max_retries"),
+                (Integer) rs.getObject("rate_limit_qps"),
+                rs.getString("tags"),
+                rs.getString("updated_by"),
+                toInstant(rs.getTimestamp("updated_at")),
+                (Integer) rs.getObject("config_schema_ver"),
+                rs.getString("deprecated_reason"),
+                rs.getString("system_code"));
+    }
+
+    private static Instant toInstant(java.sql.Timestamp ts) {
+        return ts == null ? null : ts.toInstant();
+    }
+
+    @Override
+    public List<BusinessSystemRecord> listBusinessSystems(String tenantId) {
+        return jdbc.query(
+                "SELECT tenant_id, system_code, name, owner, contact, description, status "
+                        + "FROM biz_system WHERE tenant_id = :tenantId ORDER BY system_code",
+                new MapSqlParameterSource().addValue("tenantId", tenantId),
+                (rs, i) -> new BusinessSystemRecord(
+                        rs.getString("tenant_id"), rs.getString("system_code"), rs.getString("name"),
+                        rs.getString("owner"), rs.getString("contact"), rs.getString("description"),
+                        rs.getString("status")));
+    }
+
+    @Override
+    public Optional<BusinessSystemRecord> findBusinessSystem(String tenantId, String systemCode) {
+        List<BusinessSystemRecord> rows = jdbc.query(
+                "SELECT tenant_id, system_code, name, owner, contact, description, status "
+                        + "FROM biz_system WHERE tenant_id = :tenantId AND system_code = :systemCode",
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("systemCode", systemCode),
+                (rs, i) -> new BusinessSystemRecord(
+                        rs.getString("tenant_id"), rs.getString("system_code"), rs.getString("name"),
+                        rs.getString("owner"), rs.getString("contact"), rs.getString("description"),
+                        rs.getString("status")));
+        return rows.stream().findFirst();
+    }
+
+    @Override
+    public void upsertBusinessSystem(BusinessSystemRecord r) {
+        jdbc.update(
+                "INSERT INTO biz_system (tenant_id, system_code, name, owner, contact, description, status, created_at, updated_at) "
+                        + "VALUES (:tenantId, :systemCode, :name, :owner, :contact, :description, :status, :createdAt, :updatedAt) "
+                        + "ON CONFLICT (tenant_id, system_code) DO UPDATE SET "
+                        + "name = EXCLUDED.name, owner = EXCLUDED.owner, contact = EXCLUDED.contact, "
+                        + "description = EXCLUDED.description, status = EXCLUDED.status, updated_at = EXCLUDED.updated_at",
+                new MapSqlParameterSource()
+                        .addValue("tenantId", r.tenantId())
+                        .addValue("systemCode", r.systemCode())
+                        .addValue("name", r.name())
+                        .addValue("owner", r.owner())
+                        .addValue("contact", r.contact())
+                        .addValue("description", r.description())
+                        .addValue("status", r.status() == null ? BusinessSystemRecord.STATUS_ACTIVE : r.status())
+                        .addValue("createdAt", ts(Instant.now()))
+                        .addValue("updatedAt", ts(Instant.now())));
+    }
+
+    @Override
+    public void deleteBusinessSystem(String tenantId, String systemCode) {
+        jdbc.update(
+                "DELETE FROM biz_system WHERE tenant_id = :tenantId AND system_code = :systemCode",
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("systemCode", systemCode));
     }
 
     @Override
     public List<BusinessToolRecord> listBusinessTools(String tenantId) {
         return jdbc.query(
-                """
-                SELECT tenant_id, tool_name, description, kind, status, config
-                FROM business_tool WHERE tenant_id = :tenantId ORDER BY tool_name
-                """,
+                "SELECT " + TOOL_COLS + " FROM business_tool WHERE tenant_id = :tenantId ORDER BY tool_name",
                 new MapSqlParameterSource().addValue("tenantId", tenantId),
-                (rs, i) -> new BusinessToolRecord(
-                        rs.getString("tenant_id"), rs.getString("tool_name"), rs.getString("description"),
-                        rs.getString("kind"), rs.getString("status"), rs.getString("config")));
+                JdbcGovernanceRepository::mapTool);
+    }
+
+    @Override
+    public Optional<BusinessToolRecord> findBusinessTool(String tenantId, String toolName) {
+        List<BusinessToolRecord> rows = jdbc.query(
+                "SELECT " + TOOL_COLS + " FROM business_tool WHERE tenant_id = :tenantId AND tool_name = :toolName",
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("toolName", toolName),
+                JdbcGovernanceRepository::mapTool);
+        return rows.stream().findFirst();
     }
 
     @Override
     public void deleteBusinessTool(String tenantId, String toolName) {
         jdbc.update(
                 "DELETE FROM business_tool WHERE tenant_id = :tenantId AND tool_name = :toolName",
-                new org.springframework.jdbc.core.namedparam.MapSqlParameterSource()
+                new MapSqlParameterSource()
                         .addValue("tenantId", tenantId)
                         .addValue("toolName", toolName));
     }
@@ -188,13 +278,32 @@ public class JdbcGovernanceRepository implements GovernanceRepository {
     public void upsertBusinessTool(BusinessToolRecord t) {
         jdbc.update(
                 """
-                INSERT INTO business_tool (tenant_id, tool_name, description, kind, status, config, created_at)
-                VALUES (:tenantId, :toolName, :description, :kind, :status, :config, :createdAt)
+                INSERT INTO business_tool
+                  (tenant_id, tool_name, description, kind, status, config,
+                   version, env, owner, secret_ref, timeout_ms, max_retries, rate_limit_qps,
+                   tags, updated_by, updated_at, config_schema_ver, deprecated_reason, system_code, created_at)
+                VALUES
+                  (:tenantId, :toolName, :description, :kind, :status, :config,
+                   :version, :env, :owner, :secretRef, :timeoutMs, :maxRetries, :rateLimitQps,
+                   :tags, :updatedBy, :updatedAt, :configSchemaVer, :deprecatedReason, :systemCode, :createdAt)
                 ON CONFLICT (tenant_id, tool_name) DO UPDATE
                 SET description = EXCLUDED.description,
                     kind = EXCLUDED.kind,
                     status = EXCLUDED.status,
-                    config = EXCLUDED.config
+                    config = EXCLUDED.config,
+                    version = EXCLUDED.version,
+                    env = EXCLUDED.env,
+                    owner = EXCLUDED.owner,
+                    secret_ref = EXCLUDED.secret_ref,
+                    timeout_ms = EXCLUDED.timeout_ms,
+                    max_retries = EXCLUDED.max_retries,
+                    rate_limit_qps = EXCLUDED.rate_limit_qps,
+                    tags = EXCLUDED.tags,
+                    updated_by = EXCLUDED.updated_by,
+                    updated_at = EXCLUDED.updated_at,
+                    config_schema_ver = EXCLUDED.config_schema_ver,
+                    deprecated_reason = EXCLUDED.deprecated_reason,
+                    system_code = EXCLUDED.system_code
                 """,
                 new MapSqlParameterSource()
                         .addValue("tenantId", t.tenantId())
@@ -203,7 +312,109 @@ public class JdbcGovernanceRepository implements GovernanceRepository {
                         .addValue("kind", t.kind() == null ? BusinessToolRecord.KIND_IN_PROCESS : t.kind())
                         .addValue("status", t.status() == null ? BusinessToolRecord.STATUS_ENABLED : t.status())
                         .addValue("config", t.config())
+                        .addValue("version", t.version() == null ? 1 : t.version())
+                        .addValue("env", t.env() == null ? BusinessToolRecord.ENV_PROD : t.env())
+                        .addValue("owner", t.owner())
+                        .addValue("secretRef", t.secretRef())
+                        .addValue("timeoutMs", t.timeoutMs() == null ? 30_000 : t.timeoutMs())
+                        .addValue("maxRetries", t.maxRetries() == null ? 0 : t.maxRetries())
+                        .addValue("rateLimitQps", t.rateLimitQps())
+                        .addValue("tags", t.tags())
+                        .addValue("updatedBy", t.updatedBy())
+                        .addValue("updatedAt", ts(t.updatedAt() == null ? Instant.now() : t.updatedAt()))
+                        .addValue("configSchemaVer", t.configSchemaVer() == null ? 1 : t.configSchemaVer())
+                        .addValue("deprecatedReason", t.deprecatedReason())
+                        .addValue("systemCode", t.systemCode())
                         .addValue("createdAt", ts(Instant.now())));
+    }
+
+    @Override
+    public List<AgentToolBindingRecord> listToolBindings(String tenantId, String agentId) {
+        return jdbc.query(
+                """
+                SELECT tenant_id, agent_id, tool_name, enabled, policy_override
+                FROM agent_tool_binding
+                WHERE tenant_id = :tenantId AND agent_id = :agentId
+                ORDER BY tool_name
+                """,
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("agentId", agentId),
+                (rs, i) -> new AgentToolBindingRecord(
+                        rs.getString("tenant_id"),
+                        rs.getString("agent_id"),
+                        rs.getString("tool_name"),
+                        rs.getBoolean("enabled"),
+                        rs.getString("policy_override")));
+    }
+
+    @Override
+    public void upsertToolBinding(AgentToolBindingRecord r) {
+        jdbc.update(
+                """
+                INSERT INTO agent_tool_binding
+                  (tenant_id, agent_id, tool_name, enabled, policy_override, created_at, updated_at)
+                VALUES (:tenantId, :agentId, :toolName, :enabled, :policyOverride, :createdAt, :updatedAt)
+                ON CONFLICT (tenant_id, agent_id, tool_name) DO UPDATE
+                SET enabled = EXCLUDED.enabled,
+                    policy_override = EXCLUDED.policy_override,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", r.tenantId())
+                        .addValue("agentId", r.agentId())
+                        .addValue("toolName", r.toolName())
+                        .addValue("enabled", r.enabled())
+                        .addValue("policyOverride", r.policyOverride())
+                        .addValue("createdAt", ts(Instant.now()))
+                        .addValue("updatedAt", ts(Instant.now())));
+    }
+
+    @Override
+    public void deleteToolBinding(String tenantId, String agentId, String toolName) {
+        jdbc.update(
+                """
+                DELETE FROM agent_tool_binding
+                WHERE tenant_id = :tenantId AND agent_id = :agentId AND tool_name = :toolName
+                """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("agentId", agentId)
+                        .addValue("toolName", toolName));
+    }
+
+    @Override
+    public Optional<String> findToolSecret(String tenantId, String refName) {
+        List<String> rows = jdbc.query(
+                "SELECT secret_value FROM tool_credential WHERE tenant_id = :tenantId AND ref_name = :refName",
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("refName", refName),
+                (rs, i) -> rs.getString(1));
+        return rows.stream().findFirst();
+    }
+
+    @Override
+    public void upsertToolSecret(String tenantId, String refName, String kind, String secretValue) {
+        jdbc.update(
+                """
+                INSERT INTO tool_credential (tenant_id, ref_name, kind, secret_value, created_at, updated_at)
+                VALUES (:tenantId, :refName, :kind, :secretValue, :createdAt, :updatedAt)
+                ON CONFLICT (tenant_id, ref_name) DO UPDATE
+                SET kind = EXCLUDED.kind,
+                    secret_value = EXCLUDED.secret_value,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("refName", refName)
+                        .addValue("kind", kind == null ? "header" : kind)
+                        .addValue("secretValue", secretValue)
+                        .addValue("createdAt", ts(Instant.now()))
+                        .addValue("updatedAt", ts(Instant.now())));
+    }
+
+    @Override
+    public void deleteToolSecret(String tenantId, String refName) {
+        jdbc.update(
+                "DELETE FROM tool_credential WHERE tenant_id = :tenantId AND ref_name = :refName",
+                new MapSqlParameterSource().addValue("tenantId", tenantId).addValue("refName", refName));
     }
 
     @Override

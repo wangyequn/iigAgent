@@ -29,3 +29,9 @@ venv/
 **/venv/
 fix-*.cjs
 **/cp.txt
+
+# local tokens / build packages
+scripts/jeecg_token.txt
+scripts/pc_platform_path.txt
+dist/
+*.zip

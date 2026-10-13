@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS mcp_server (
 
 -- Nacos AI Registry：来源标记；nacos 导入不得覆盖 local 种子/手工登记
 ALTER TABLE mcp_server ADD COLUMN IF NOT EXISTS source VARCHAR(16) NOT NULL DEFAULT 'local';
+-- 外部工具治理：MCP 静态头（authMode=client）；user_token 由运行时按请求注入
+ALTER TABLE mcp_server ADD COLUMN IF NOT EXISTS headers_json TEXT;
 
 -- S4: 业务工具登记（进程内 / MCP / HTTP）
 CREATE TABLE IF NOT EXISTS business_tool (
@@ -73,9 +75,63 @@ CREATE TABLE IF NOT EXISTS business_tool (
   description    VARCHAR(512),
   kind           VARCHAR(32)  NOT NULL DEFAULT 'IN_PROCESS',
   status         VARCHAR(32)  NOT NULL DEFAULT 'ENABLED',
-  config         VARCHAR(2048),
+  config         TEXT,
   created_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (tenant_id, tool_name)
+);
+
+-- 工具生产化扩展：生命周期 / 环境 / 韧性 / 责任人 / 密钥引用
+ALTER TABLE business_tool ADD COLUMN IF NOT EXISTS version INT NOT NULL DEFAULT 1;
+ALTER TABLE business_tool ADD COLUMN IF NOT EXISTS env VARCHAR(16) NOT NULL DEFAULT 'prod';
+ALTER TABLE business_tool ADD COLUMN IF NOT EXISTS owner VARCHAR(128);
+ALTER TABLE business_tool ADD COLUMN IF NOT EXISTS secret_ref VARCHAR(256);
+ALTER TABLE business_tool ADD COLUMN IF NOT EXISTS timeout_ms INT NOT NULL DEFAULT 30000;
+ALTER TABLE business_tool ADD COLUMN IF NOT EXISTS max_retries INT NOT NULL DEFAULT 0;
+ALTER TABLE business_tool ADD COLUMN IF NOT EXISTS rate_limit_qps INT;
+ALTER TABLE business_tool ADD COLUMN IF NOT EXISTS tags VARCHAR(256);
+ALTER TABLE business_tool ADD COLUMN IF NOT EXISTS updated_by VARCHAR(128);
+ALTER TABLE business_tool ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP;
+ALTER TABLE business_tool ADD COLUMN IF NOT EXISTS config_schema_ver INT NOT NULL DEFAULT 1;
+ALTER TABLE business_tool ADD COLUMN IF NOT EXISTS deprecated_reason VARCHAR(256);
+
+-- 业务系统目录：智能体 / 工具按系统划分
+CREATE TABLE IF NOT EXISTS biz_system (
+  tenant_id     VARCHAR(64)  NOT NULL,
+  system_code   VARCHAR(64)  NOT NULL,
+  name          VARCHAR(128) NOT NULL,
+  owner         VARCHAR(128),
+  contact       VARCHAR(128),
+  description   VARCHAR(512),
+  status        VARCHAR(16)  NOT NULL DEFAULT 'ACTIVE',
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP,
+  PRIMARY KEY (tenant_id, system_code)
+);
+
+ALTER TABLE agent ADD COLUMN IF NOT EXISTS system_code VARCHAR(64);
+ALTER TABLE business_tool ADD COLUMN IF NOT EXISTS system_code VARCHAR(64);
+
+-- Agent × 工具装配矩阵：有绑定行则按绑定挂载；无绑定行兼容旧行为（挂载全部 ENABLED）
+CREATE TABLE IF NOT EXISTS agent_tool_binding (
+  tenant_id        VARCHAR(64)  NOT NULL,
+  agent_id         VARCHAR(64)  NOT NULL,
+  tool_name        VARCHAR(128) NOT NULL,
+  enabled          BOOLEAN      NOT NULL DEFAULT TRUE,
+  policy_override  VARCHAR(16),
+  created_at       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (tenant_id, agent_id, tool_name)
+);
+
+-- 工具调用凭证（config 只存 secret_ref，密文落此表）
+CREATE TABLE IF NOT EXISTS tool_credential (
+  tenant_id     VARCHAR(64)  NOT NULL,
+  ref_name      VARCHAR(128) NOT NULL,
+  kind          VARCHAR(32)  NOT NULL DEFAULT 'header',
+  secret_value  TEXT         NOT NULL,
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (tenant_id, ref_name)
 );
 
 -- S4: HITL 审批项

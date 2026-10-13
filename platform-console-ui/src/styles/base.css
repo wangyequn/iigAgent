@@ -232,3 +232,27 @@ pre.code,
 .fade-leave-to {
   opacity: 0;
 }
+
+
+/* ---- Loading：浅色 + 品牌色，替换 Element 默认黑底 ---- */
+.el-loading-mask {
+  background-color: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(2px);
+}
+.el-loading-spinner .circular {
+  width: 36px;
+  height: 36px;
+}
+.el-loading-spinner .circular .path {
+  stroke: var(--brand, #4f46e5) !important;
+  stroke-width: 3.5 !important;
+}
+.el-loading-spinner .el-loading-text {
+  color: var(--brand, #4f46e5) !important;
+  font-size: 12px !important;
+  font-weight: 600;
+}
+/* 表格内 loading 时保持表头可见 */
+.el-table .el-loading-mask {
+  background-color: rgba(255, 255, 255, 0.82) !important;
+}

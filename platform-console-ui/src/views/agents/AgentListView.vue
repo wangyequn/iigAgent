@@ -131,21 +131,28 @@ async function create() {
     await createAgent({
       agentId: id,
       name: String(form.value.name || '').trim() || id,
-      modelId: form.value.modelId,
-      sysPrompt: form.value.sysPrompt,
     })
-    try {
-      await createVersion(id, {
-        modelId: form.value.modelId,
-        sysPrompt: form.value.sysPrompt,
-      })
-    } catch {
-      /* optional */
+    const versionBody = {
+      modelId: form.value.modelId || 'deepseek:deepseek-flash',
+      sysPrompt: form.value.sysPrompt || '',
     }
-    ElMessage.success(`Agent「${id}」已创建`)
+    let createdVersion = null
+    try {
+      const v = await createVersion(id, versionBody)
+      createdVersion = v?.version ?? 1
+    } catch (e) {
+      throw new Error(`Agent 已创建，但写入版本失败：${e.message}`)
+    }
+    try {
+      await publishVersion(id, createdVersion)
+    } catch (e) {
+      throw new Error(`版本 v${createdVersion} 已创建，但发布失败：${e.message}`)
+    }
+    ElMessage.success(`Agent「${id}」已创建并发布 v${createdVersion}`)
     createOpen.value = false
     form.value.agentId = ''
     form.value.name = ''
+    form.value.sysPrompt = ''
     await load()
   } catch (e) {
     ElMessage.error(e.message)

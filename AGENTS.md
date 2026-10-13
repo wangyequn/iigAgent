@@ -45,6 +45,10 @@ $env:BASE_URL = "http://localhost:5175"
 & $env:MIMO_NODE "..\scripts\ui-click-test.mjs"       # 路由/侧栏
 & $env:MIMO_NODE "..\scripts\ui-interact-test.mjs"    # 对话发送
 
+# 经管理 API 铺默认智能体（demo / console-bot / biz-assist；幂等）
+python scripts/provision_agents.py                   # 需后端在线；可选 --pc-base 登记 biz-assist HTTP 工具
+# 或直接执行 SQL：platform-open-api/src/main/resources/db/seed-agents.sql
+
 # 运维脚本（后端需在线）
 powershell -File scripts/n4-check.ps1                 # N4 上线自检
 powershell -File scripts/smoke-load.ps1 -N 20         # 冒烟压测分位
@@ -79,7 +83,7 @@ powershell -File scripts/demo-external-stream.ps1     # External 流式透传演
 - 流式路径是 **`POST .../messages:stream`**（冒号）；SSE 用 fetch POST（EventSource 不支持 POST）。
 - Chat 按 **endpoint release 指针** 解析当前版本 → `AgentInstanceCache` 懒加载；进程内单例 key=`tenantId:agentId:version`。
 - 发布切流（B2）：新实例 build 成功才改指针；旧版 `drain start` → in-flight 归零/超时 → `drain done` 后 evict。
-- 空目录由 `CatalogBootstrap` 播种 `demo` v1，兼容 S0–S2 Demo。
+- **`CatalogBootstrap` 不再播种智能体**（仅运维启动：就绪/Nacos/OTel）。Agent/版本/发布一律走管理 API 或 SQL：`scripts/provision_agents.py`、`db/seed-agents.sql`、管理台「新建 Agent」（创建后自动建版本并发布）。
 - **审计（audit）**：管理面写操作 / HITL confirm / interrupt 自动写 `audit_log`（`AuditFilter` + `AuditLogService`）；查询 `GET /api/v1/admin/audit?limit=50`（需 **admin** scope）。
 - **S4 HITL**：`permission_rule` 落库；危险写工具（如 `dangerous_write`）默认 ASK。流式 `REQUIRE_USER_CONFIRM` → `approval_item` → `POST .../confirm`（metadata ConfirmResult）；重复确认 `409 APPROVAL_ALREADY_RESOLVED`。**非流式**（`POST .../messages` / `confirm`）经事件流收集，暂停时返回 **`409 HITL_CONFIRM_REQUIRED`**（不再是 200 空串），且 `approval_item` 照常落库可查；`confirm` 后若模型重试再次 ASK，同样 409 + 新审批。
 - **confirm 必须回填 `ToolUseBlock.content`（易踩坑）**：`ToolExecutor` 用 `block.getContent()`（入参的 JSON 串）做 schema 校验，只设 `input` 会报 `argument "content" is null` → 工具 ERROR → 模型重试循环、回复恒空。`ChatController.confirm` 三处重建 block 均已补 `content`；审批接口返回 `toolInput`（JSON **字符串**），前端回传时必须 `JSON.parse` 后放进 `input`。
@@ -91,13 +95,14 @@ powershell -File scripts/demo-external-stream.ps1     # External 流式透传演
 - **GenerateReason 透出**：非流式响应体带 `generateReason` 字段（`MODEL_STOP`/`PERMISSION_ASKING`/`ALL_TOOLS_DENIED`/`INTERRUPTED` 等，取自最终 Msg）；409 `HITL_CONFIRM_REQUIRED` 的 message 内也带 `(generateReason=...)`。
 - **清会话上下文**：`POST /api/v1/agents/{agentId}/sessions/{sessionId}/clear-context`（body `userId`）→ `CONTEXT_CLEARED`；调 harness `clearContext(ctx)` 重置该会话槽位（对话清空、权限回初始规则）并持久化 stateStore，前端「清上下文」按钮同路径。
 - **全拒停止**：`StopOnAllDeniedMiddleware`（官方配方）挂在 builder——用户拒绝全部工具后本轮立即以 `generateReason=ALL_TOOLS_DENIED` 结束，不再空转下一轮。
-- **种子规则按工具级判存在（易踩坑）**：`CatalogBootstrap.seedRuleIfAbsent` 曾按 tool+behavior 判——用户 acceptRule 接受 ALLOW 后重启会补种 ASK 并**覆盖用户规则**（upsertRule 行为替换语义），已改为按 toolName 判存在。另：memory_*/session_search/read_file 的 ALLOW 死种子已删（工具面默认禁用，工具清单证实未注册），存量 DB 行已清理；若未来开启对应工具需恢复播种。
+- **智能体不走 Java 种子**：`CatalogBootstrap` 已去掉 demo/console-bot/biz-assist 硬编码；新增用 `POST /api/v1/admin/agents` + versions + publish，或 `scripts/provision_agents.py` / `db/seed-agents.sql`。历史坑：Java 种子曾按 tool+behavior 判存在并在重启时覆盖用户 acceptRule 规则（upsertRule 替换语义），该逻辑已随种子删除。
 - **实例构建租户以 Key 为准**：`AgentInstanceCreator.create(tenantId, ...)` 接收请求租户，权限规则 / MCP / 技能 / 知识 / 沙箱 / 模型凭证均按该租户解析（`resolveTenant()` 仅作非请求上下文回退）。
-- **workspace 路径含租户**：version.workspace 为空**或等于裸基础路径**（旧种子行）时，运行时组合 `{AMP_WORKSPACE}/{tenantId}/v{version}`；自定义路径原样保留。`CatalogBootstrap` 播种 v1 已改存 `workspace=null`。
+- **workspace 路径含租户**：version.workspace 为空**或等于裸基础路径**（旧数据行）时，运行时组合 `{AMP_WORKSPACE}/{tenantId}/v{version}`；自定义路径原样保留。新建版本请留空 workspace。
 - **AgentScope 运行时配置**（`amp.agent.*`）：`compaction-trigger-messages`（默认 30）/ `compaction-keep-messages`（默认 10）——**显式**配置压缩（Java 官方 quickstart 推荐；2.0.3 字节码默认开，但官方文档口径为按需开启，显式化防版本漂移），构建日志打印 `compaction config ...`；`compaction-trigger-tokens`（0=按模型窗口动态触发，>0 覆盖为固定阈值）、`tool-result-eviction`（默认 true，80K 字符逐出）、`fallback-model-id`（空=不回退，设置后 build 日志有 `fallback model enabled`）、`max-retries`（默认 3）、`max-context-tokens`（默认 8000，**workspace 上下文注入预算**，与会话压缩窗口无关）。官方文档入口为 **https://java.agentscope.io/v2/zh/docs/quickstart**（勿用 Python 版 docs.agentscope.io）。
 - **S4 工具**：进程内 `SampleToolset`（`safe_lookup`/`dangerous_write`，通用示例非业务域）；MCP 登记表 + ToolsConfig 注入（连真实 Server 属债务）。
 - **HTTP 通用工具**：`business_tool.kind=HTTP` + `config{url,method,headers,parameters}` → `HttpBusinessTool`（`ToolBase`）按登记自动注册到 Toolkit，模型可直接调用；`IN_PROCESS` 仍仅目录元数据。
 - 治理 Admin：`/api/v1/admin/governance/permissions`、`/mcp-servers`、`/business-tools`、`/inbox`、`/approvals/{id}/decide`；会话侧 `GET .../approvals`。
+- **工具生产化（P0–P2）**：`business_tool` 扩列（version/env/owner/secret_ref/timeout_ms/max_retries/tags 等）+ `agent_tool_binding` + `tool_credential`。生命周期 `DRAFT|ENABLED|DISABLED|DEPRECATED`；`POST .../business-tools/{name}/lifecycle|test|clone`；软删=DEPRECATED（`?hard=true` 硬删）。**装配**：`mountableTools`——有绑定行只挂绑定启用的工具，无绑定兼容挂全部 ENABLED。**HttpBusinessTool**：超时/只读重试/熔断/脱敏/`secret:` 引用；config 禁止明文 Authorization（须 `secretRef`）。SSRF：`amp.tools.block-private-urls=true` 时拦内网 URL。控制台「工具中心」：目录总览、详情抽屉（配置/装配/审计/试调用）。
 - **S5 技能市场**：`skill`/`skill_review` 表；`MarketplaceSkillRepository` **只读且仅 APPROVED**；上传=DRAFT，approve/reject 写审核记录并 **evict 实例缓存**（审后下轮生效）；`setWriteable` 被锁死 false。
 - 技能 Admin：`/api/v1/admin/skills`（GET/POST）、`/{id}/approve|reject|archive`、`/visible`。
 - **S6 RAG**：`knowledge_document`/`knowledge_chunk`；`LocalHashEmbedder` 自建向量；工具 `knowledge_search` 返回 `[docId#chunkId]` 引用；Admin `/api/v1/admin/knowledge/documents|search`。
@@ -117,7 +122,7 @@ powershell -File scripts/demo-external-stream.ps1     # External 流式透传演
 - **二期 RBAC / IAM-RBAC**：`IamService`/`RbacGuard`；权限点 `orch:read|write|run`、`iam:admin`、`billing:read|write`、`skill:review`、`agent:call` 等。**双轨身份**：人轨 JWT（`spring-boot-starter-oauth2-resource-server`，`amp.iam.issuer-uri`/`jwk-set-uri`，空=仅 API Key 兼容模式）优先于机器轨 API Key；claims `sub`→userId、`tenant`/`tenantId`/`azp`→tenantId，`roles`/`realm_access.roles`/`resource_access.*.roles`→平台角色。**`X-User-Id`/`X-User-Roles` 默认不信任**（`amp.iam.trust-headers` 默认 false，迁移窗口才开）；admin scope 的 Key 直接放行，JWT 人身份走 RBAC（`tenant_admin`/`admin` 角色过 `requireAdmin`）。未知 Bearer 在 JWT 启用时交给 Resource Server（`ApiKeyAwareBearerTokenResolver` 跳过已知 Key）。Admin `/api/v1/admin/iam/**`。**前端 OIDC**：`platform-console-ui/src/auth/oidc.js`（Authorization Code + PKCE），`http.js` JWT 优先 Bearer、未登录回退 API Key；回调 `/auth/callback`；发现 `GET /api/v1/health/iam`（免鉴权）。Keycloak 开发 compose：`docker-compose.keycloak.yml`。方案见 `docs/IAM-RBAC方案.md`；开发文档见 `docs/二期项目开发文档.md`。
 - **二期 S10**：`RuntimeWorkflowAgentInvoker`（`@Primary`）接 Harness/External 真实对话 + 配额/指标；Echo 仅兜底。管理台新增「编排 Workflow」页（Workflow/Run/Team/IAM）。
 - **Mem0 长期记忆**（官方 `agentscope-extensions-mem0`）：依赖 `agentscope-extensions-mem0:2.0.3`。`ScopedMem0LongTermMemory`（`LongTermMemory` SPI）按会话作用域委托官方 `Mem0LongTermMemory`（agentName=agentId / userId=`{tenant}:{user}` / runName=sessionId + metadata）。工具面官方 `LongTermMemoryTools`：`recordToMemory` / `retrieveFromMemory`。`Mem0MemoryMiddleware`（MiddlewareBase，order=50）对话前语义召回注入 `<long_term_memory>`、对话后 record 抽取沉淀；`MemoryScope` ThreadLocal 供工具解析身份。配置 `amp.mem0.*`（enabled/base-url/api-key/api-type=self-hosted|platform/auto-recall/auto-capture）。**Docker**：`docker compose -f docker-compose.mem0.yml --env-file scripts/mem0/.env up -d`（API :8888，PG :15433；Dashboard `--profile dashboard`）。Admin：`GET/POST /api/v1/admin/memories`（status/search/list/get/put/delete，admin scope，`Mem0AdminClient`）。文档入口 **https://java.agentscope.io/v2/zh/integration/memory/mem0**。
-- **控制台智能机器人（console-bot）**：右下角浮动「小助」，**平台最佳实践智能体**，目录/工具/知识/权限均可在管理台治理。CatalogBootstrap 播种：Agent `console-bot` + v1 系统提示词 + 发布指针；`business_tool` 登记全部内置工具（`config.owner=console-bot`，IN_PROCESS）；权限 ALLOW/ASK；知识《控制台智能机器人使用指南》《AI中台能力地图》；技能草稿 `console-bot-best-practice`。工具面 `ConsoleBotToolset`：`platform_status` / `list_agents` / `agent_detail` / `list_permissions` / `list_business_tools` / `list_skills` / `list_knowledge` / `console_knowledge_search` / `list_workflows` / `list_teams` / `usage_summary` / `list_audit` + `ui_navigate` / `ui_focus` / `ui_notify` / `ui_ask_user` / `ui_suggest`（结果带 `ui.actions`）。前端 `ConsoleBot.vue` + `botBus.js`；PageHeader「问小助」。`ConsoleBotSupport` 聚合服务。
+- **控制台智能机器人（console-bot）**：右下角浮动「小助」，**平台最佳实践智能体**，目录/工具/知识/权限均可在管理台治理。不再由 CatalogBootstrap 播种；用 `scripts/provision_agents.py` 经管理 API 创建：Agent `console-bot` + v1 系统提示词 + 发布指针；`business_tool` 登记内置工具（`config.owner=console-bot`，IN_PROCESS）；权限 ALLOW/ASK；知识《控制台智能机器人使用指南》《AI中台能力地图》；技能草稿 `console-bot-best-practice`。工具面 `ConsoleBotToolset`：`platform_status` / `list_agents` / `agent_detail` / `list_permissions` / `list_business_tools` / `list_skills` / `list_knowledge` / `console_knowledge_search` / `list_workflows` / `list_teams` / `usage_summary` / `list_audit` + `ui_navigate` / `ui_focus` / `ui_notify` / `ui_ask_user` / `ui_suggest`（结果带 `ui.actions`）。前端 `ConsoleBot.vue` + `botBus.js`；PageHeader「问小助」。`ConsoleBotSupport` 聚合服务。
 - **OpenAI 兼容**：`POST /api/v1/chat/completions` 与 `/v1/chat/completions`（`OpenAiCompatController`，open scope Bearer）；`model` 映射 agentId，支持 `stream` SSE chunk + `[DONE]`。
 - **Nacos（可选）**：`amp.nacos.enabled` 默认 false；`NacosConfigBridge` 拉取/监听 `amp.ops.*` 热更；`GET /api/v1/admin/nacos` 查源；失败回退 local。`nacos-client` **3.2.3**。
 - **Nacos AI Registry（可选，决策已锁）**：`amp.nacos.ai.enabled` 默认 false；**仅 nacos→local**（`mcp_server.source`，local 不被覆盖）；**AgentCard 仅可发现**；namespace **shared=public** / identity / **prefix**（`namespace-prefix` 默认 `amp-`）。Admin：`GET .../nacos/ai|mcp|agents|prompts|skills`、`POST .../mcp/sync|agents/import|skills/import|prompts/refresh`。`NacosAiAdminClient` + `NacosAiSyncService` + `NacosPromptService`。**Skill**：Nacos 导入为 **DRAFT `source=nacos`**，须 `approve` 后进 `MarketplaceSkillRepository`（不绕过审核）；Skill/Prompt API 需 **Nacos ≥3.2**（3.1 仅有 MCP/A2A）。**Prompt**：键 `amp.agent.{id}.sys`，pin `v{N}`/`stable` 或 `latest`。`sync-on-start` 可选。冒烟 `scripts/nacos-ai-smoke.ps1`。
@@ -131,7 +136,7 @@ powershell -File scripts/demo-external-stream.ps1     # External 流式透传演
 ## 代码边界
 
 - 后端包根：`com.sinosoft.amp.openapi`（包名跨模块不变）；公共类型在 `com.sinosoft.amp.common`。
-- **Maven 分层（勿逆向依赖）**：`common → runtime → governance → ops → channel → open-api`；装配类（`AgentInstanceFactory` / `CatalogBootstrap` / `AgentRuntimeConfiguration` / `ConsoleBot*`）在 `platform-open-api`。
+- **Maven 分层（勿逆向依赖）**：`common → runtime → governance → ops → channel → open-api`；装配类（`AgentInstanceFactory` / `CatalogBootstrap`（仅运维启动，无目录种子） / `AgentRuntimeConfiguration` / `ConsoleBot*`）在 `platform-open-api`。
 - 目录 SQL：`platform-open-api/src/main/resources/db/schema.sql`（PG `ON CONFLICT` upsert）。
 - 单测覆盖 cache/drain/publish/治理/技能/配额（内存目录 + mock），不启 Spring 上下文；**208 测分布在各模块**。
 - 前端在 `platform-console-ui/src`（路由 + views/components/api）；改契约时后端与 `api.js` 需同步。

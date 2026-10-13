@@ -7,6 +7,10 @@ public record AgentRecord(
         String agentId,
         String name,
         AgentStatus status,
-        Instant createdAt
+        Instant createdAt,
+        String systemCode
 ) {
+    public AgentRecord(String tenantId, String agentId, String name, AgentStatus status, Instant createdAt) {
+        this(tenantId, agentId, name, status, createdAt, null);
+    }
 }

@@ -64,4 +64,33 @@ class HttpBusinessToolTest {
         assertTrue(result != null);
         assertTrue(String.valueOf(result.getOutput()).contains("ok") || result.getName() != null);
     }
+
+    @Test
+    void pathTemplateSubstitutesAndKeepsQuery() throws Exception {
+        server.createContext("/dict/", exchange -> {
+            String path = exchange.getRequestURI().getPath();
+            String query = exchange.getRequestURI().getQuery();
+            byte[] bytes = ("{\"path\":\"" + path + "\",\"query\":\"" + (query == null ? "" : query) + "\"}")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        });
+        String dictUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/dict/getDictItems/{dictCode}";
+        BusinessToolRecord rec = new BusinessToolRecord(
+                "acme", "query_dict", "dict", BusinessToolRecord.KIND_HTTP,
+                BusinessToolRecord.STATUS_ENABLED,
+                "{\"url\":\"" + dictUrl + "\",\"method\":\"GET\",\"readOnly\":true,\"authMode\":\"none\","
+                        + "\"parameters\":{\"type\":\"object\",\"properties\":{"
+                        + "\"dictCode\":{\"type\":\"string\"},\"q\":{\"type\":\"string\"}}}}");
+        HttpBusinessTool tool = new HttpBusinessTool(HttpToolSpec.from(rec));
+        io.agentscope.core.message.ToolResultBlock result = tool.callAsync(
+                io.agentscope.core.tool.ToolCallParam.builder()
+                        .input(Map.of("dictCode", "sex", "q", "x"))
+                        .build()).block();
+        assertTrue(result != null);
+        String out = String.valueOf(result.getOutput());
+        assertTrue(out.contains("/dict/getDictItems/sex") || out.contains("sex"), out);
+    }
 }

@@ -50,6 +50,11 @@ public class McpConnectService {
             // 零信任：未显式列出工具则不暴露任何 MCP 工具
             throw new IllegalStateException("mcp " + r.name() + " has no enableTools; skip injection");
         }
+        // 静态头（authMode=client）；user_token 由 buildClient 的 customizer 按请求注入
+        Map<String, String> staticHeaders = r.headers();
+        if (staticHeaders != null && !staticHeaders.isEmpty()) {
+            mc.setHeaders(new LinkedHashMap<>(staticHeaders));
+        }
         mc.setTimeout(Duration.ofSeconds(5));
         mc.setInitializationTimeout(initTimeout == null ? Duration.ofSeconds(5) : initTimeout);
         return mc;
@@ -127,6 +132,20 @@ public class McpConnectService {
             case "http", "streamable_http", "streamablehttp" -> b = b.streamableHttpTransport(rec.url());
             default -> throw new CatalogException("MCP_TRANSPORT_INVALID", "unsupported transport: " + transport);
         }
+        Map<String, String> staticHeaders = rec.headers();
+        if (staticHeaders != null) {
+            staticHeaders.forEach(b::header);
+        }
+        // user_token：按请求注入人轨票（Agent 权限 ⊆ 用户权限）
+        if (!"stdio".equals(transport) && (staticHeaders == null || !staticHeaders.containsKey("Authorization"))) {
+            b = b.httpRequestCustomizer((reqBuilder, method, uri, body, ctx) -> {
+                String userToken = com.sinosoft.amp.openapi.security.UserTokenHolder.resolveOrSingleActive();
+                if (userToken != null && !userToken.isBlank()) {
+                    reqBuilder.header("X-Access-Token", userToken);
+                    reqBuilder.header("Authorization", "Bearer " + userToken);
+                }
+            });
+        }
         return b.buildSync();
     }
 
@@ -159,5 +178,39 @@ public class McpConnectService {
             }
         }
         return map;
+    }
+
+    /**
+     * 自建客户端并返回已初始化 wrapper + 允许的工具名（用于注册 McpDynamicTool）。
+     * 客户端带 httpRequestCustomizer，每次调用注入当前用户票。
+     */
+    public List<LiveMcpServer> openLiveServers(String tenantId) {
+        List<LiveMcpServer> out = new ArrayList<>();
+        for (McpServerRecord r : governance.listMcp(tenantId)) {
+            if (!McpServerRecord.STATUS_REGISTERED.equalsIgnoreCase(r.status())
+                    && !"CONNECTED".equalsIgnoreCase(r.status())) {
+                continue;
+            }
+            McpClientWrapper client = null;
+            try {
+                client = buildClient(r);
+                client.initialize().block(Duration.ofSeconds(6));
+                out.add(new LiveMcpServer(r.name(), client, GovernanceService.splitTools(r.enableTools())));
+                log.info("mcp live server opened tenant={} name={}", tenantId, r.name());
+            } catch (Exception e) {
+                log.warn("open mcp live server failed name={}: {}", r.name(), e.toString());
+                if (client != null) {
+                    try {
+                        client.close();
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    /** 已打开的 MCP 服务（含客户端与允许工具列表）。 */
+    public record LiveMcpServer(String name, McpClientWrapper client, List<String> enableTools) {
     }
 }

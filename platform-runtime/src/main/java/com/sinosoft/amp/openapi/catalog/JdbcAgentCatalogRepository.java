@@ -18,7 +18,8 @@ public class JdbcAgentCatalogRepository implements AgentCatalogRepository {
             rs.getString("agent_id"),
             rs.getString("name"),
             AgentStatus.valueOf(rs.getString("status")),
-            toInstant(rs.getTimestamp("created_at"))
+            toInstant(rs.getTimestamp("created_at")),
+            rs.getString("system_code")
     );
 
     private static final RowMapper<AgentVersionRecord> VERSION_MAPPER = (rs, i) -> new AgentVersionRecord(
@@ -55,7 +56,7 @@ public class JdbcAgentCatalogRepository implements AgentCatalogRepository {
     public Optional<AgentRecord> findAgent(String tenantId, String agentId) {
         List<AgentRecord> rows = jdbc.query(
                 """
-                SELECT tenant_id, agent_id, name, status, created_at
+                SELECT tenant_id, agent_id, name, status, created_at, system_code
                 FROM agent
                 WHERE tenant_id = :tenantId AND agent_id = :agentId
                 """,
@@ -70,7 +71,7 @@ public class JdbcAgentCatalogRepository implements AgentCatalogRepository {
     public List<AgentRecord> listAgents(String tenantId) {
         return jdbc.query(
                 """
-                SELECT tenant_id, agent_id, name, status, created_at
+                SELECT tenant_id, agent_id, name, status, created_at, system_code
                 FROM agent
                 WHERE tenant_id = :tenantId
                 ORDER BY agent_id
@@ -83,18 +84,20 @@ public class JdbcAgentCatalogRepository implements AgentCatalogRepository {
     public void upsertAgent(AgentRecord agent) {
         jdbc.update(
                 """
-                INSERT INTO agent (tenant_id, agent_id, name, status, created_at)
-                VALUES (:tenantId, :agentId, :name, :status, :createdAt)
+                INSERT INTO agent (tenant_id, agent_id, name, status, created_at, system_code)
+                VALUES (:tenantId, :agentId, :name, :status, :createdAt, :systemCode)
                 ON CONFLICT (tenant_id, agent_id) DO UPDATE
                 SET name = EXCLUDED.name,
-                    status = EXCLUDED.status
+                    status = EXCLUDED.status,
+                    system_code = EXCLUDED.system_code
                 """,
                 new MapSqlParameterSource()
                         .addValue("tenantId", agent.tenantId())
                         .addValue("agentId", agent.agentId())
                         .addValue("name", agent.name())
                         .addValue("status", agent.status().name())
-                        .addValue("createdAt", toTs(agent.createdAt() == null ? Instant.now() : agent.createdAt())));
+                        .addValue("createdAt", toTs(agent.createdAt() == null ? Instant.now() : agent.createdAt()))
+                        .addValue("systemCode", agent.systemCode()));
     }
 
 

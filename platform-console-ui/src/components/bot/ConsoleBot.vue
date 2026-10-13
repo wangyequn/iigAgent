@@ -2,6 +2,8 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { BubbleList, XSender } from 'vue-element-plus-x'
+
 import { streamChat, clearContext, listSessionApprovals, confirmSession } from '@/api'
 import { useAppStore } from '@/stores/app'
 import botAvatar from '@/assets/bot-avatar.png'
@@ -28,6 +30,16 @@ const sending = ref(false)
 const streaming = ref(false)
 const errorText = ref('')
 const messages = ref([])
+const bubbleList = computed(() =>
+  messages.value.map((m) => ({
+    id: m.id,
+    role: m.role === 'user' ? 'user' : 'assistant',
+    content: m.text || (m.thinking ? '…' : ''),
+    typing: false,
+    isMarkdown: true,
+    loading: !!m.loading
+  }))
+)
 const scrollBox = ref(null)
 const inputBox = ref(null)
 const chipOptions = ref([])
@@ -535,15 +547,13 @@ function toolSummary(t) {
       </header>
 
       <div ref="scrollBox" class="bot-body">
-        <div v-for="m in messages" :key="m.id" class="bot-msg" :class="m.role">
-          <div class="bubble">
-            <div v-if="m.thinking" class="thinking t-faint">{{ m.thinking }}</div>
-            <div class="text" v-text="m.text" />
-            <div v-if="m.tools?.length" class="tools">
-              <div v-for="t in m.tools" :key="t.toolCallId || t.toolName" class="tool-row">
-                <span class="tool-name mono">{{ t.toolName }}</span>
-                <span class="tool-sum t-faint">{{ toolSummary(t) }}</span>
-              </div>
+        <BubbleList :list="bubbleList" class="epx-bubbles" />
+        <div v-for="m in messages" :key="m.id + '_meta'" class="bot-msg-meta">
+          <div v-if="m.thinking" class="thinking t-faint">{{ m.thinking }}</div>
+          <div v-if="m.tools && m.tools.length" class="tools">
+            <div v-for="t in m.tools" :key="t.toolCallId || t.toolName" class="tool-row">
+              <span class="tool-name mono">{{ t.toolName }}</span>
+              <span class="tool-sum t-faint">{{ toolSummary(t) }}</span>
             </div>
           </div>
         </div>
@@ -593,21 +603,18 @@ function toolSummary(t) {
         </el-tag>
       </div>
 
-      <footer class="bot-ft">
-        <el-input
-          ref="inputBox"
+            <footer class="bot-ft">
+        <XSender
           v-model="input"
-          type="textarea"
-          :rows="2"
+          :loading="sending"
           :disabled="sending"
           placeholder="问问小助…（Enter 发送，Shift+Enter 换行）"
-          @keydown.enter.exact.prevent="send()"
+          @submit="send"
         />
         <div class="bot-ft-row">
           <span class="t-faint" style="font-size: 11px">
             {{ streaming ? '生成中…' : '可导航页面 / 查询平台 / 知识检索' }}
           </span>
-          <el-button type="primary" size="small" :loading="sending" @click="send()">发送</el-button>
         </div>
       </footer>
     </div>

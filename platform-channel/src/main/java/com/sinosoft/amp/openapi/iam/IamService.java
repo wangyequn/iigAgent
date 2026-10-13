@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class IamService {
 
     public static final String ROLE_TENANT_ADMIN = "tenant_admin";
+    public static final String ROLE_ADMIN = "admin";
     public static final String ROLE_OPS = "ops";
     public static final String ROLE_SKILL_REVIEWER = "skill_reviewer";
     public static final String ROLE_AUDITOR = "auditor";
@@ -90,10 +91,21 @@ public class IamService {
     }
 
     public boolean hasPermission(String tenantId, String userId, Set<String> roles, String permission) {
-        if (roles != null && roles.stream().anyMatch(r -> ROLE_TENANT_ADMIN.equalsIgnoreCase(r))) {
+        if (isSuperRole(roles)) {
             return true;
         }
         return permissionsOfRoles(tenantId, roles == null ? Set.of() : roles).contains(permission);
+    }
+
+    /** tenant_admin / admin / superadmin 全放行（与 AuthContext 人轨旁路一致）。 */
+    public static boolean isSuperRole(Set<String> roles) {
+        if (roles == null) {
+            return false;
+        }
+        return roles.stream().anyMatch(r ->
+                ROLE_TENANT_ADMIN.equalsIgnoreCase(r)
+                        || ROLE_ADMIN.equalsIgnoreCase(r)
+                        || "superadmin".equalsIgnoreCase(r));
     }
 
     public Map<String, Object> describeDefaults() {

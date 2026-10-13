@@ -78,6 +78,20 @@ class JwtAuthSupportTest {
     }
 
     @Test
+    void jeecgPlatformRoleManagerPassesRequireAdmin() {
+        AuthContext.setJeecg(new JeecgIdentity("stc_sinosoft", "cid",
+                java.util.Set.of("platform:user:setroles"), java.util.Set.of()));
+        AuthContext.requireAdmin();
+    }
+
+    @Test
+    void jeecgBusinessUserRejectedByRequireAdmin() {
+        AuthContext.setJeecg(new JeecgIdentity("ops", "cid",
+                java.util.Set.of("order:query"), java.util.Set.of()));
+        org.junit.jupiter.api.Assertions.assertThrows(UnauthorizedException.class, AuthContext::requireAdmin);
+    }
+
+    @Test
     void currentIsNullWithoutJwt() {
         assertNull(JwtAuthSupport.current());
     }

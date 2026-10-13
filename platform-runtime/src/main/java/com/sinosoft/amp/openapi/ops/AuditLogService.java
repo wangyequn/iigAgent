@@ -23,6 +23,7 @@ public class AuditLogService {
 
     public AuditLogService(NamedParameterJdbcTemplate jdbc) {
         this.jdbc = jdbc;
+        ToolCallAuditor.bind(this);
     }
 
     public void record(String tenantId, String actor, String action,
@@ -54,14 +55,36 @@ public class AuditLogService {
     }
 
     public List<Map<String, Object>> recent(String tenantId, int limit) {
+        return recent(tenantId, limit, null, null, null);
+    }
+
+    /** 支持按 toolName（resource_id）/ action 过滤，便于工具详情抽屉联动审计。 */
+    public List<Map<String, Object>> recent(String tenantId, int limit,
+                                            String toolName, String resourceId, String action) {
         int size = Math.max(1, Math.min(limit <= 0 ? 50 : limit, 200));
-        return jdbc.queryForList("""
+        StringBuilder sql = new StringBuilder("""
                 SELECT id, tenant_id, actor, action, resource_type, resource_id, method, path,
                        detail, status_code, duration_ms, created_at
                 FROM audit_log
                 WHERE tenant_id = :tenantId
-                ORDER BY id DESC
-                LIMIT :limit
-                """, Map.of("tenantId", tenantId == null ? "" : tenantId, "limit", size));
+                """);
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("tenantId", tenantId == null ? "" : tenantId);
+        params.put("limit", size);
+        if (toolName != null && !toolName.isBlank()) {
+            sql.append(" AND (resource_id = :toolName OR detail LIKE :toolLike)");
+            params.put("toolName", toolName);
+            params.put("toolLike", "%" + toolName + "%");
+        }
+        if (resourceId != null && !resourceId.isBlank()) {
+            sql.append(" AND resource_id = :resourceId");
+            params.put("resourceId", resourceId);
+        }
+        if (action != null && !action.isBlank()) {
+            sql.append(" AND action = :action");
+            params.put("action", action);
+        }
+        sql.append(" ORDER BY id DESC LIMIT :limit");
+        return jdbc.queryForList(sql.toString(), params);
     }
 }

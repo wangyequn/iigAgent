@@ -28,12 +28,37 @@ public interface GovernanceRepository {
 
     void upsertMcpServer(McpServerRecord record);
 
+    // --- business systems ---
+    List<BusinessSystemRecord> listBusinessSystems(String tenantId);
+
+    java.util.Optional<BusinessSystemRecord> findBusinessSystem(String tenantId, String systemCode);
+
+    void upsertBusinessSystem(BusinessSystemRecord record);
+
+    void deleteBusinessSystem(String tenantId, String systemCode);
+
     // --- business tools ---
     List<BusinessToolRecord> listBusinessTools(String tenantId);
+
+    Optional<BusinessToolRecord> findBusinessTool(String tenantId, String toolName);
 
     void upsertBusinessTool(BusinessToolRecord record);
 
     void deleteBusinessTool(String tenantId, String toolName);
+
+    // --- agent × tool binding ---
+    List<AgentToolBindingRecord> listToolBindings(String tenantId, String agentId);
+
+    void upsertToolBinding(AgentToolBindingRecord record);
+
+    void deleteToolBinding(String tenantId, String agentId, String toolName);
+
+    // --- tool credentials ---
+    Optional<String> findToolSecret(String tenantId, String refName);
+
+    void upsertToolSecret(String tenantId, String refName, String kind, String secretValue);
+
+    void deleteToolSecret(String tenantId, String refName);
 
     // --- approval ---
     Optional<ApprovalItem> findApproval(String id);

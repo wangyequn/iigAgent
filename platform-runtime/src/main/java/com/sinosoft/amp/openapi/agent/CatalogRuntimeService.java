@@ -44,6 +44,10 @@ public class CatalogRuntimeService {
     }
 
     public AgentRecord createAgent(String tenantId, String agentId, String name) {
+        return createAgent(tenantId, agentId, name, null);
+    }
+
+    public AgentRecord createAgent(String tenantId, String agentId, String name, String systemCode) {
         if (agentId == null || !agentId.matches("[A-Za-z0-9_-]{1,64}")) {
             throw new CatalogException("AGENT_ID_INVALID", "agentId must match [A-Za-z0-9_-]{1,64}");
         }
@@ -52,7 +56,7 @@ public class CatalogRuntimeService {
             throw new CatalogException("AGENT_EXISTS", "agent already exists: " + agentId);
         }
         AgentRecord agent = new AgentRecord(tenantId, agentId, name == null ? agentId : name,
-                AgentStatus.ACTIVE, Instant.now());
+                AgentStatus.ACTIVE, Instant.now(), systemCode);
         catalog.upsertAgent(agent);
         log.info("create agent tenant={} agentId={}", tenantId, agentId);
         return agent;
@@ -65,7 +69,7 @@ public class CatalogRuntimeService {
                 : (Boolean.TRUE.equals(enabled) ? AgentStatus.ACTIVE : AgentStatus.DISABLED);
         String newName = name == null || name.isBlank() ? existing.name() : name;
         AgentRecord rec = new AgentRecord(tenantId, agentId, newName, status,
-                existing.createdAt() == null ? Instant.now() : existing.createdAt());
+                existing.createdAt() == null ? Instant.now() : existing.createdAt(), existing.systemCode());
         catalog.upsertAgent(rec);
         return rec;
     }

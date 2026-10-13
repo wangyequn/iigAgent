@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { absorbTokenFromUrl, getAccessToken, startAuthorize } from '@/auth/sso'
 
 const routes = [
   {
@@ -6,6 +7,24 @@ const routes = [
     name: 'auth-callback',
     component: () => import('@/views/auth/AuthCallbackView.vue'),
     meta: { title: 'OIDC 登录' },
+  },
+  {
+    path: '/auth/jeecg',
+    name: 'auth-jeecg',
+    component: () => import('@/views/auth/JeecgCallbackView.vue'),
+    meta: { title: '平台登录', public: true },
+  },
+  {
+    path: '/oauth2/callback',
+    name: 'oauth2-callback',
+    component: () => import('@/views/auth/OAuth2CallbackView.vue'),
+    meta: { title: 'OAuth2 登录', public: true },
+  },
+  {
+    path: '/login',
+    name: 'platform-login',
+    component: () => import('@/views/auth/PlatformLoginView.vue'),
+    meta: { title: '登录', public: true },
   },
   {
     path: '/',
@@ -81,8 +100,32 @@ const routes = [
       {
         path: 'governance/tools',
         name: 'tools',
+        component: () => import('@/views/governance/ToolCatalogView.vue'),
+        meta: { title: '工具目录', group: '治理中心' },
+      },
+      {
+        path: 'governance/tools/grants',
+        name: 'tool-grants',
+        component: () => import('@/views/governance/ToolGrantsView.vue'),
+        meta: { title: '工具授权', group: '治理中心' },
+      },
+      {
+        path: 'governance/systems',
+        name: 'governance-systems',
+        component: () => import('@/views/governance/SystemsView.vue'),
+        meta: { title: '业务系统', group: '治理中心' },
+      },
+      {
+        path: 'governance/tools/register',
+        name: 'tool-register',
+        component: () => import('@/views/governance/ToolRegisterView.vue'),
+        meta: { title: '接入与登记', group: '治理中心' },
+      },
+      {
+        path: 'governance/tools/legacy',
+        name: 'tools-legacy',
         component: () => import('@/views/governance/ToolsView.vue'),
-        meta: { title: 'MCP 与工具', group: '治理中心' },
+        meta: { title: 'MCP 与工具（旧）', group: '治理中心' },
       },
       {
         path: 'governance/external',
@@ -161,6 +204,17 @@ const router = createRouter({
   scrollBehavior() {
     return { top: 0 }
   },
+})
+
+/** 标准 SSO：无会话必须走 OAuth2 登录；禁止未认证进入业务页。 */
+router.beforeEach(async (to) => {
+  absorbTokenFromUrl()
+  if (to.meta?.public) return true
+  if (getAccessToken()) return true
+  // 保存目标页，去平台 IdP 登录
+  const back = to.fullPath && to.fullPath !== '/' ? to.fullPath : '/workbench/chat'
+  startAuthorize(back)
+  return false
 })
 
 router.onError((err, to) => {

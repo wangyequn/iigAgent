@@ -77,12 +77,10 @@ class GovernanceServiceTest {
     }
 
     @Test
-    void mcpWithoutEnableToolsIsNotInjected() {
-        McpConnectService connect = new McpConnectService(service);
-        service.registerMcp("acme", "no-tools", "stdio", "npx", "x", null, null);
-        var map = connect.buildToolsConfigMap("acme");
-        org.junit.jupiter.api.Assertions.assertFalse(map.containsKey("no-tools"),
-                "empty enableTools must not inject MCP server");
+    void mcpWithoutEnableToolsRejected() {
+        // 注册门禁：enableTools 必填，避免注册即全量暴露
+        assertThrows(CatalogException.class,
+                () -> service.registerMcp("acme", "no-tools", "stdio", "npx", "x", null, null));
     }
 
     @Test
@@ -153,6 +151,29 @@ class GovernanceServiceTest {
             mcp.add(record);
         }
 
+        private final java.util.List<BusinessSystemRecord> systems = new ArrayList<>();
+
+        @Override
+        public List<BusinessSystemRecord> listBusinessSystems(String tenantId) {
+            return systems.stream().filter(s -> s.tenantId().equals(tenantId)).toList();
+        }
+
+        @Override
+        public Optional<BusinessSystemRecord> findBusinessSystem(String tenantId, String systemCode) {
+            return listBusinessSystems(tenantId).stream().filter(s -> s.systemCode().equals(systemCode)).findFirst();
+        }
+
+        @Override
+        public void upsertBusinessSystem(BusinessSystemRecord record) {
+            systems.removeIf(s -> s.tenantId().equals(record.tenantId()) && s.systemCode().equals(record.systemCode()));
+            systems.add(record);
+        }
+
+        @Override
+        public void deleteBusinessSystem(String tenantId, String systemCode) {
+            systems.removeIf(s -> s.tenantId().equals(tenantId) && s.systemCode().equals(systemCode));
+        }
+
         @Override
         public List<BusinessToolRecord> listBusinessTools(String tenantId) {
             return tools.stream().filter(t -> t.tenantId().equals(tenantId)).toList();
@@ -167,6 +188,49 @@ class GovernanceServiceTest {
         @Override
         public void deleteBusinessTool(String tenantId, String toolName) {
             tools.removeIf(t -> t.tenantId().equals(tenantId) && t.toolName().equals(toolName));
+        }
+
+        @Override
+        public Optional<BusinessToolRecord> findBusinessTool(String tenantId, String toolName) {
+            return listBusinessTools(tenantId).stream().filter(t -> t.toolName().equals(toolName)).findFirst();
+        }
+
+        private final List<AgentToolBindingRecord> bindings = new ArrayList<>();
+        private final Map<String, String> secrets = new HashMap<>();
+
+        @Override
+        public List<AgentToolBindingRecord> listToolBindings(String tenantId, String agentId) {
+            return bindings.stream()
+                    .filter(b -> b.tenantId().equals(tenantId) && b.agentId().equals(agentId))
+                    .toList();
+        }
+
+        @Override
+        public void upsertToolBinding(AgentToolBindingRecord record) {
+            bindings.removeIf(b -> b.tenantId().equals(record.tenantId())
+                    && b.agentId().equals(record.agentId()) && b.toolName().equals(record.toolName()));
+            bindings.add(record);
+        }
+
+        @Override
+        public void deleteToolBinding(String tenantId, String agentId, String toolName) {
+            bindings.removeIf(b -> b.tenantId().equals(tenantId)
+                    && b.agentId().equals(agentId) && b.toolName().equals(toolName));
+        }
+
+        @Override
+        public Optional<String> findToolSecret(String tenantId, String refName) {
+            return Optional.ofNullable(secrets.get(tenantId + "|" + refName));
+        }
+
+        @Override
+        public void upsertToolSecret(String tenantId, String refName, String kind, String secretValue) {
+            secrets.put(tenantId + "|" + refName, secretValue);
+        }
+
+        @Override
+        public void deleteToolSecret(String tenantId, String refName) {
+            secrets.remove(tenantId + "|" + refName);
         }
 
         @Override

@@ -16,6 +16,10 @@ import java.util.Map;
  *   "method": "GET|POST|PUT|DELETE",
  *   "headers": {"X-Api-Key": "secret"},
  *   "readOnly": true,
+ *   "risk": "low|medium|high|forbidden",
+ *   "permCode": "order:query",
+ *   "authMode": "user_token|client|none",
+ *   "ownerSystem": "订单系统",
  *   "parameters": {
  *     "type": "object",
  *     "properties": {"id": {"type": "string", "description": "记录 ID"}},
@@ -31,7 +35,21 @@ public record HttpToolSpec(
         String method,
         Map<String, String> headers,
         boolean readOnly,
-        Map<String, Object> parameters) {
+        Map<String, Object> parameters,
+        ToolMeta meta) {
+
+    public HttpToolSpec {
+        if (meta == null) {
+            meta = new ToolMeta(ToolMeta.RISK_MEDIUM, "", ToolMeta.AUTH_USER_TOKEN, "", readOnly);
+        }
+    }
+
+    /** 兼容旧构造（无安全元数据）。 */
+    public HttpToolSpec(String name, String description, String url, String method,
+                        Map<String, String> headers, boolean readOnly, Map<String, Object> parameters) {
+        this(name, description, url, method, headers, readOnly, parameters,
+                ToolMeta.fromConfig(null, method));
+    }
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -64,14 +82,20 @@ public record HttpToolSpec(
             Map<String, Object> parameters = cfg.get("parameters") instanceof Map
                     ? (Map<String, Object>) cfg.get("parameters")
                     : defaultSchema();
+            ToolMeta meta = ToolMeta.fromConfig(config, method);
+            if (meta.isForbidden()) {
+                throw new CatalogException("TOOL_RISK_FORBIDDEN",
+                        "HTTP tool " + rec.toolName() + " risk=forbidden cannot be loaded");
+            }
             return new HttpToolSpec(
                     rec.toolName(),
                     rec.description() == null ? rec.toolName() : rec.description(),
                     url,
                     method,
                     headers,
-                    readOnly,
-                    parameters);
+                    meta.readOnly(),
+                    parameters,
+                    meta);
         } catch (CatalogException e) {
             throw e;
         } catch (Exception e) {

@@ -304,19 +304,6 @@ public class AgentInstanceFactory implements AgentInstanceCreator {
             } catch (RuntimeException e) {
                 log.warn("apply permission context for agent {} failed: {}", agentId, e.toString());
             }
-            try {
-                java.util.Map<String, io.agentscope.harness.agent.tools.McpServerConfig> mcp =
-                        mcpConnect == null ? java.util.Map.of()
-                                : mcpConnect.buildToolsConfigMap(tenant);
-                if (!mcp.isEmpty()) {
-                    io.agentscope.harness.agent.tools.ToolsConfig withMcp = new ToolPolicyApplier(toolPolicy).apply();
-                    withMcp.setMcpServers(new java.util.LinkedHashMap<>(mcp));
-                    builder.toolsConfig(withMcp);
-                    log.info("mcp tools config injected agent={} servers={}", agentId, mcp.keySet());
-                }
-            } catch (RuntimeException e) {
-                log.warn("inject mcp config failed agent={}: {}", agentId, e.toString());
-            }
         }
         // S5: skill marketplace APPROVED only + canary
         if (skillCatalog != null && tenant != null) {
@@ -348,6 +335,34 @@ public class AgentInstanceFactory implements AgentInstanceCreator {
         }
 
         HarnessAgent agent = builder.build();
+        // 自建 MCP 客户端（httpRequestCustomizer 注入用户票）注册 Toolkit 工具
+        if (governance != null && mcpConnect != null && tenant != null) {
+            try {
+                for (com.sinosoft.amp.openapi.governance.McpConnectService.LiveMcpServer live
+                        : mcpConnect.openLiveServers(tenant)) {
+                    try {
+                        java.util.List<io.modelcontextprotocol.spec.McpSchema.Tool> remote =
+                                live.client().listTools().block(java.time.Duration.ofSeconds(6));
+                        java.util.List<io.agentscope.core.tool.ToolBase> wrapped =
+                                com.sinosoft.amp.openapi.tool.McpDynamicTool.wrapTools(
+                                        live.client(), live.name(), remote, live.enableTools());
+                        for (io.agentscope.core.tool.ToolBase t : wrapped) {
+                            if (toolPolicy.allowlistMode()
+                                    && !toolPolicy.effectiveAllow().contains(t.getName())) {
+                                continue;
+                            }
+                            agent.getToolkit().registerAgentTool(t);
+                        }
+                        log.info("mcp dynamic tools registered agent={} server={} count={}",
+                                agentId, live.name(), wrapped.size());
+                    } catch (RuntimeException e) {
+                        log.warn("register mcp tools failed server={}: {}", live.name(), e.toString());
+                    }
+                }
+            } catch (RuntimeException e) {
+                log.warn("inject mcp tools failed agent={}: {}", agentId, e.toString());
+            }
+        }
         // @Tool registry -> ReflectiveFunctionTool; PermissionEngine may hit ASK
         // 通用示例工具（非业务域），默认注册
         boolean allowSample = toolPolicy.allowlistMode()
@@ -376,14 +391,12 @@ public class AgentInstanceFactory implements AgentInstanceCreator {
             }
         }
 
-        // HTTP 通用业务工具：business_tool.config 带 url/method，登记即可调用
+        // HTTP 通用业务工具：按 Agent×Tool 绑定挂载（无绑定时兼容：挂全部 ENABLED）
         if (governance != null && tenant != null) {
             try {
-                for (com.sinosoft.amp.openapi.tool.BusinessToolRecord t : governance.listTools(tenant)) {
+                for (com.sinosoft.amp.openapi.tool.BusinessToolRecord t :
+                        governance.mountableTools(tenant, agentId)) {
                     if (!com.sinosoft.amp.openapi.tool.BusinessToolRecord.KIND_HTTP.equalsIgnoreCase(t.kind())) {
-                        continue;
-                    }
-                    if (!com.sinosoft.amp.openapi.tool.BusinessToolRecord.STATUS_ENABLED.equalsIgnoreCase(t.status())) {
                         continue;
                     }
                     boolean allowHttpTool = !toolPolicy.allowlistMode()
@@ -393,8 +406,14 @@ public class AgentInstanceFactory implements AgentInstanceCreator {
                     }
                     com.sinosoft.amp.openapi.tool.HttpToolSpec spec =
                             com.sinosoft.amp.openapi.tool.HttpToolSpec.from(t);
-                    agent.getToolkit().registerAgentTool(new com.sinosoft.amp.openapi.tool.HttpBusinessTool(spec));
-                    log.info("http business tool registered agent={} tool={}", agentId, t.toolName());
+                    java.util.function.Function<String, String> secretResolver =
+                            t.secretRef() == null || t.secretRef().isBlank()
+                                    ? null
+                                    : ref -> governance.resolveToolSecret(tenant, ref).orElse("");
+                    agent.getToolkit().registerAgentTool(new com.sinosoft.amp.openapi.tool.HttpBusinessTool(
+                            spec, t.timeoutMsOr(30_000), t.maxRetriesOr(0), secretResolver));
+                    log.info("http business tool registered agent={} tool={} v={} timeout={}ms",
+                            agentId, t.toolName(), t.version(), t.timeoutMsOr(30_000));
                 }
             } catch (RuntimeException e) {
                 log.warn("register http business tools failed agent={}: {}", agentId, e.toString());
