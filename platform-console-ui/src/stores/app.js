@@ -1,15 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import { getOpenKey, getAdminKey, saveAuth, loadAuth } from '@/api/http'
-import { healthReady, iamInfo } from '@/api'
-import {
-  beginLogin,
-  currentIdentity,
-  loadOidcConfig,
-  logout as oidcLogout,
-  saveOidcConfig,
-} from '@/auth/oidc'
-import { clearJeecgToken, getJeecgToken, logoutAll } from '@/auth/platformLogin'
+import { healthReady } from '@/api'
 
 export const useAppStore = defineStore('app', () => {
   const auth = ref({
@@ -23,9 +15,6 @@ export const useAppStore = defineStore('app', () => {
   const ready = ref(null)
   const notifications = ref([])
   const commandOpen = ref(false)
-  const oidcCfg = ref(loadOidcConfig())
-  const oidcUser = ref(currentIdentity())
-  const iamMode = ref(null)
 
   watch(
     auth,
@@ -42,47 +31,6 @@ export const useAppStore = defineStore('app', () => {
 
   function setAuth(patch) {
     auth.value = { ...auth.value, ...patch }
-  }
-
-  async function refreshOidc() {
-    oidcUser.value = currentIdentity()
-    try {
-      iamMode.value = await iamInfo()
-    } catch {
-      iamMode.value = null
-    }
-  }
-
-  async function loginOidc() {
-    saveOidcConfig(oidcCfg.value)
-    await beginLogin()
-  }
-
-  function logoutOidc() {
-    oidcLogout()
-    oidcUser.value = null
-    notify({ type: 'info', title: '已退出 OIDC', message: '将回退到 API Key 机器轨' })
-  }
-
-  function logout() {
-    try {
-      logoutAll()
-      oidcLogout()
-    } catch (e) {
-      console.warn('logout clear failed', e)
-    }
-    oidcUser.value = null
-    try {
-      notify({ type: 'info', title: '已退出登录', message: '本机登录态已清除' })
-    } catch {
-      /* ignore */
-    }
-  }
-
-  const jeecgUser = () => getJeecgToken()
-
-  function persistOidcCfg() {
-    saveOidcConfig(oidcCfg.value)
   }
 
   async function refreshHealth() {
@@ -127,16 +75,7 @@ export const useAppStore = defineStore('app', () => {
     ready,
     notifications,
     commandOpen,
-    oidcCfg,
-    oidcUser,
-    iamMode,
     setAuth,
-    refreshOidc,
-    loginOidc,
-    logoutOidc,
-    logout,
-    jeecgUser,
-    persistOidcCfg,
     refreshHealth,
     notify,
     markAllRead,

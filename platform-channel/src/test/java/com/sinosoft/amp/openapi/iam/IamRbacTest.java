@@ -2,25 +2,14 @@ package com.sinosoft.amp.openapi.iam;
 
 import com.sinosoft.amp.openapi.security.AuthContext;
 import com.sinosoft.amp.openapi.security.AuthProperties;
-import com.sinosoft.amp.openapi.security.IamProperties;
-import com.sinosoft.amp.openapi.security.JeecgIdentity;
-import com.sinosoft.amp.openapi.security.JwtAuthSupport;
 import com.sinosoft.amp.openapi.security.UnauthorizedException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -39,143 +28,43 @@ class IamRbacTest {
     @AfterEach
     void tearDown() {
         AuthContext.clear();
-        JwtAuthSupport.clear();
-        RequestContextHolder.resetRequestAttributes();
+    }
+
+    private void bindOpenKey() {
+        AuthContext.set(new AuthProperties.KeyEntry("open-key", "acme", List.of("*"), List.of("open")));
+    }
+
+    private void bindAdminKey() {
+        AuthContext.set(new AuthProperties.KeyEntry("admin-key", "acme", List.of("*"), List.of("open", "admin")));
     }
 
     @Test
-    void agentCallerDeniedOrchestrationWrite() {
-        AuthContext.set(new AuthProperties.KeyEntry("k", "acme", List.of("demo"), List.of("open")));
-        // 无角色 → 默认 agent_caller
-        assertThrows(UnauthorizedException.class, () -> guard.require("orch:write"));
-    }
-
-    @Test
-    void adminScopeAllowsAll() {
-        AuthContext.set(new AuthProperties.KeyEntry("k", "acme", List.of("demo"), List.of("open", "admin")));
-        guard.require("orch:write");
-        guard.require("iam:admin");
-        guard.require("billing:read");
-    }
-
-    @Test
-    void developerRoleCanRunWorkflows() {
-        AuthContext.set(new AuthProperties.KeyEntry("k", "acme", List.of("demo"), List.of("open")));
-        iam.assignRole("acme", "alice", IamService.ROLE_DEVELOPER);
-        assertTrue(iam.hasPermission("acme", "alice", Set.of("developer"), "orch:run"));
-        assertTrue(iam.hasPermission("acme", "alice", Set.of("developer"), "orch:write"));
-        assertFalse(iam.hasPermission("acme", "alice", Set.of("developer"), "skill:review"));
-    }
-
-    @Test
-    void auditorReadOnlyBilling() {
-        assertTrue(iam.hasPermission("acme", "bob", Set.of("auditor"), "billing:read"));
-        assertFalse(iam.hasPermission("acme", "bob", Set.of("auditor"), "orch:write"));
-        assertFalse(iam.hasPermission("acme", "bob", Set.of("auditor"), "iam:admin"));
-    }
-
-    @Test
-    void unknownRoleRejected() {
-        assertThrows(UnauthorizedException.class,
-                () -> iam.assignRole("acme", "x", "superuser"));
-    }
-
-    @Test
-    void headersIgnoredByDefault() {
-        AuthContext.set(new AuthProperties.KeyEntry("k", "acme", List.of("demo"), List.of("open")));
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader(RbacGuard.HEADER_USER, "mallory");
-        request.addHeader(RbacGuard.HEADER_ROLES, "tenant_admin");
-        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
-
-        assertEquals("acme:****", guard.currentUserId());
-        assertFalse(guard.currentRoles("acme", "k").contains("tenant_admin"));
-        assertThrows(UnauthorizedException.class, () -> guard.require("iam:admin"));
-    }
-
-    @Test
-    void headersTrustedWhenMigrationFlagOn() {
-        RbacGuard trusting = new RbacGuard(iam, new IamProperties("", "", true));
-        AuthContext.set(new AuthProperties.KeyEntry("k", "acme", List.of("demo"), List.of("open")));
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader(RbacGuard.HEADER_USER, "alice");
-        request.addHeader(RbacGuard.HEADER_ROLES, "developer");
-        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
-
-        assertEquals("alice", trusting.currentUserId());
-        assertEquals(Set.of("developer"), trusting.currentRoles("acme", "alice"));
-        trusting.require("orch:write");
-    }
-
-    @Test
-    void jwtRoleDeveloperCanWriteButNotReviewSkills() {
-        AuthContext.set(new AuthProperties.KeyEntry("k", "acme", List.of("demo"), List.of("open")));
-        Jwt jwt = Jwt.withTokenValue("tok").header("alg", "RS256").subject("alice")
-                .claim("tenant", "acme")
-                .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(3600))
-                .build();
-        JwtAuthSupport.setAuthenticationForTest(new JwtAuthenticationToken(jwt,
-                List.of(new SimpleGrantedAuthority("ROLE_developer"))));
-
-        assertEquals("alice", guard.currentUserId());
-        guard.require("orch:run");
-        assertThrows(UnauthorizedException.class, () -> guard.require("skill:review"));
-    }
-
-    @Test
-    void jwtTenantAdminPassesAll() {
-        Jwt jwt = Jwt.withTokenValue("tok").header("alg", "RS256").subject("root")
-                .claim("tenant", "acme")
-                .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(3600))
-                .build();
-        JwtAuthSupport.setAuthenticationForTest(new JwtAuthenticationToken(jwt,
-                List.of(new SimpleGrantedAuthority("ROLE_tenant_admin"))));
+    void adminScopeBypassesRbac() {
+        bindAdminKey();
         guard.require("iam:admin");
         guard.require("billing:write");
     }
 
     @Test
-    void jwtRolesWinOverHeaderSpoofEvenIfTrusted() {
-        RbacGuard trusting = new RbacGuard(iam, new IamProperties("", "", true));
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader(RbacGuard.HEADER_ROLES, "tenant_admin");
-        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
-        Jwt jwt = Jwt.withTokenValue("tok").header("alg", "RS256").subject("bob")
-                .claim("tenant", "acme")
-                .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(3600))
-                .build();
-        JwtAuthSupport.setAuthenticationForTest(new JwtAuthenticationToken(jwt,
-                List.of(new SimpleGrantedAuthority("ROLE_agent_caller"))));
-
-        assertEquals(Set.of("agent_caller"), trusting.currentRoles("acme", "bob"));
-        assertThrows(UnauthorizedException.class, () -> trusting.require("iam:admin"));
+    void openKeyNeedsIamPermission() {
+        bindOpenKey();
+        iam.assignRole("acme", "acme:open-****", IamService.ROLE_DEVELOPER);
+        assertTrue(iam.hasPermission("acme", "acme:open-****", Set.of("developer"), "orch:run"));
+        assertFalse(iam.hasPermission("acme", "acme:open-****", Set.of("developer"), "skill:review"));
     }
 
     @Test
-    void jeecgPlatformRoleManagerPassesIamAdmin() {
-        AuthContext.setJeecg(new JeecgIdentity("stc_sinosoft", "cid", Set.of("platform:user:setroles"), Set.of()));
-        guard.require("iam:admin");
-        guard.require("admin:read");
-    }
-
-    @Test
-    void jeecgAdminRoleFromAdministratorsIdPasses() {
-        AuthContext.setJeecg(new JeecgIdentity("stc_sinosoft", "cid", Set.of(), Set.of("admin")));
-        guard.require("iam:admin");
-    }
-
-    @Test
-    void jeecgBusinessPermsAloneDeniedIamAdmin() {
-        AuthContext.setJeecg(new JeecgIdentity("ops_user", "cid", Set.of("order:query", "system:dict:add"), Set.of()));
+    void openKeyWithoutRoleDenied() {
+        bindOpenKey();
         assertThrows(UnauthorizedException.class, () -> guard.require("iam:admin"));
     }
 
     @Test
-    void jeecgIamAssignedRoleGrantsPermission() {
-        AuthContext.setJeecg(new JeecgIdentity("bob", "cid", Set.of(), Set.of()));
-        iam.assignRole("acme", "bob", IamService.ROLE_DEVELOPER);
-        guard.require("orch:write");
-        assertThrows(UnauthorizedException.class, () -> guard.require("iam:admin"));
+    void auditorBillingRead() {
+        assertTrue(iam.hasPermission("acme", "bob", Set.of("auditor"), "billing:read"));
+        assertFalse(iam.hasPermission("acme", "bob", Set.of("auditor"), "billing:write"));
+        assertFalse(iam.hasPermission("acme", "bob", Set.of("auditor"), "orch:write"));
+        assertFalse(iam.hasPermission("acme", "bob", Set.of("auditor"), "iam:admin"));
     }
 
     @Test

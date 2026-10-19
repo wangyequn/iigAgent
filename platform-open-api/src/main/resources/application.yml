@@ -107,27 +107,6 @@ amp:
         tenant-id: ${AMP_TENANT_ID:acme}
         agents: ['*']
         scopes: [open, admin]
-  iam:
-    # 人轨 JWT/OIDC（Keycloak 等）。issuer/jwk 均空 = 兼容模式，仅 API Key
-    issuer-uri: ${AMP_IAM_ISSUER_URI:}
-    jwk-set-uri: ${AMP_IAM_JWK_SET_URI:}
-    # 迁移窗口才打开；默认禁止 X-User-Id / X-User-Roles 自报头
-    trust-headers: ${AMP_IAM_TRUST_HEADERS:false}
-  jeecg:
-    # 标准 OAuth2 SSO：后端 /authorize → 平台 /user/authorize → 回调换票
-    enabled: ${AMP_JEECG_AUTH_ENABLED:false}
-    base-url: ${AMP_JEECG_BASE_URL:}
-    portal-url: ${AMP_JEECG_PORTAL_URL:http://127.0.0.1:3200}
-    client-id: ${AMP_JEECG_CLIENT_ID:216f0175b84541759b37cb1fca6ac02c}
-    client-secret: ${AMP_JEECG_CLIENT_SECRET:}
-    token-header: X-Access-Token
-    get-code-path: /sys/oauth2Server/getCode
-    get-token-path: /sys/oauth2Server/getTokenByCode
-    login-by-token-path: /sys/loginByToken
-    permission-path: /sys/permission/getUserPermissionByToken
-    tenant-id: ${AMP_TENANT_ID:acme}
-  # 登录平台（pc_platform / Jeecg）业务 API 基址；供 scripts/provision_agents.py 登记 biz-assist 只读 HTTP 工具
-  # 例：http://127.0.0.1:8080 或网关前缀 http://jeecg-gateway
   pc-platform:
     base-url: ${AMP_PC_PLATFORM_BASE_URL:}
   agent:

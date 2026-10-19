@@ -1,6 +1,4 @@
 /** Unified HTTP helpers with platform error codes. */
-import { getAccessToken as getSsoToken } from '@/auth/sso'
-
 const STORAGE_KEY = 'amp.console.auth'
 
 export function loadAuth() {
@@ -23,19 +21,9 @@ export function getAdminKey() {
   return loadAuth().adminKey || 's0-admin-key'
 }
 
-/**
- * 标准 SSO：只用平台 access_token。
- * 未登录不回落到 API Key，避免「退出后仍能调接口」。
- */
-export function headers(apiKey, opts = {}) {
-  const token = getSsoToken()
-  if (!token) {
-    // 仍未登录：请求会 401，由路由守卫跳登录
-    return { 'Content-Type': 'application/json' }
-  }
+export function headers(apiKey) {
   return {
-    Authorization: `Bearer ${token}`,
-    'X-Access-Token': token,
+    Authorization: `Bearer ${apiKey}`,
     'Content-Type': 'application/json',
   }
 }
@@ -56,7 +44,7 @@ function buildError(res, text, path) {
   return err
 }
 
-async function request(method, path, { apiKey, body, query, raw, forceKey } = {}) {
+async function request(method, path, { apiKey, body, query, raw } = {}) {
   const qs = query
     ? `?${new URLSearchParams(
         Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== ''),
@@ -65,7 +53,7 @@ async function request(method, path, { apiKey, body, query, raw, forceKey } = {}
   const url = path + qs
   const res = await fetch(url, {
     method,
-    headers: headers(apiKey, { forceKey }),
+    headers: headers(apiKey),
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) {

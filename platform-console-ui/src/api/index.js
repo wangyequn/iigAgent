@@ -7,7 +7,6 @@ const withKey = (apiKey) => ({ apiKey: apiKey || getOpenKey() })
 /* ───────── Health ───────── */
 export const healthReady = () => http.get('/api/v1/health/ready')
 export const replicaInfo = () => http.get('/api/v1/health/replica')
-export const iamInfo = () => http.get('/api/v1/health/iam')
 
 /* ───────── Agents / Catalog ───────── */
 export const listAgents = (apiKey) => http.get('/api/v1/agents', withKey(apiKey))

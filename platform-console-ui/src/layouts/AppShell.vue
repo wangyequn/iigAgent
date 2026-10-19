@@ -3,7 +3,6 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { ElMessage } from 'element-plus'
-import { logoutAndRedirect } from '@/auth/sso'
 import { listSessionApprovals, listInbox } from '@/api'
 import ConsoleBot from '@/components/bot/ConsoleBot.vue'
 
@@ -20,9 +19,7 @@ const origin = location.origin
 
 function onLogout() {
   identityOpen.value = false
-  ElMessage.success('已退出登录')
-  // 标准 SSO：清票并回到登录（未登录无法再进业务）
-  logoutAndRedirect()
+  ElMessage.success('已重置本机配置（保留页面）')
 }
 
 const navGroups = [
@@ -133,7 +130,7 @@ async function refreshPending() {
 
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
-  await Promise.all([store.refreshHealth(), store.refreshOidc()])
+  await Promise.all([store.refreshHealth()])
   refreshPending()
 })
 
@@ -191,9 +188,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             <kbd>Ctrl K</kbd>
           </button>
 
-          <el-tag v-if="store.oidcUser" type="success" size="small" effect="light" round>
-            JWT · {{ store.oidcUser.name || store.oidcUser.userId }}
-          </el-tag>
           <el-tag :type="readyOk ? 'success' : 'danger'" size="small" effect="light" round>
             {{ readyOk ? '服务就绪' : '未就绪' }}
           </el-tag>
@@ -266,49 +260,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     <el-drawer v-model="identityOpen" title="身份与上下文" size="400px">
       <el-form label-position="top">
         <div class="flex-between" style="margin-bottom:8px">
-          <b>人轨 · OIDC / JWT</b>
-          <el-tag size="small" :type="store.iamMode?.jwtEnabled ? 'success' : 'info'">
-            {{ store.iamMode?.jwtEnabled ? 'JWT 已启用' : 'JWT 未配置' }}
-          </el-tag>
-        </div>
-        <template v-if="store.oidcUser">
-          <el-descriptions :column="1" size="small" border>
-            <el-descriptions-item label="用户">{{ store.oidcUser.name || store.oidcUser.userId }}</el-descriptions-item>
-            <el-descriptions-item label="tenant">{{ store.oidcUser.tenantId || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="角色">
-              <el-tag v-for="r in store.oidcUser.roles || []" :key="r" size="small" style="margin:2px">{{ r }}</el-tag>
-              <span v-if="!(store.oidcUser.roles || []).length">—</span>
-            </el-descriptions-item>
-          </el-descriptions>
-          <el-button style="margin-top:10px" @click="store.logoutOidc()">退出 OIDC</el-button>
-        </template>
-        <template v-else>
-          <el-form-item label="Issuer（OIDC）">
-            <el-input
-              v-model="store.oidcCfg.issuer"
-              placeholder="http://127.0.0.1:8180/realms/amp"
-              @change="store.persistOidcCfg()"
-            />
-          </el-form-item>
-          <el-form-item label="Client ID">
-            <el-input v-model="store.oidcCfg.clientId" placeholder="amp-console" @change="store.persistOidcCfg()" />
-          </el-form-item>
-          <el-button type="primary" :disabled="!store.oidcCfg.issuer" @click="store.loginOidc()">
-            OIDC 登录（PKCE）
-          </el-button>
-          <div class="t-faint" style="margin-top:8px">
-            回调地址 <span class="mono">{{ origin }}/auth/callback</span>（需在 IdP 客户端登记）
-          </div>
-        </template>
-
-        <el-divider />
-        <div class="flex-between" style="margin-bottom:8px">
-          <b>机器轨 · API Key</b>
-          <el-tag size="small" type="warning">双轨</el-tag>
+          <b>API Key</b>
+          <el-tag size="small" type="warning">机器轨</el-tag>
         </div>
         <el-form-item label="Open API Key">
           <el-input v-model="store.auth.openKey" placeholder="s0-demo-key" show-password />
-          <div class="t-faint" style="margin-top:6px">业务对话 / 会话接口（open scope）；JWT 登录后优先用 token</div>
+          <div class="t-faint" style="margin-top:6px">业务对话 / 会话接口（open scope）</div>
         </el-form-item>
         <el-form-item label="Admin API Key">
           <el-input v-model="store.auth.adminKey" placeholder="s0-admin-key" show-password />
@@ -316,11 +273,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         </el-form-item>
         <el-divider />
         <div class="flex-between" style="margin-bottom:8px">
-          <b>登录会话</b>
-          <el-button type="danger" size="small" plain @click="onLogout">退出登录</el-button>
+          <b>本机配置</b>
+          <el-button type="danger" size="small" plain @click="onLogout">重置会话默认值</el-button>
         </div>
         <div class="t-faint">
-          退出会清除本机 Jeecg / OIDC 票据；API Key 配置保留。可从平台重新登录进入。
+          仅使用 API Key，无单点登录。密钥保存在本机 localStorage。
         </div>
         <el-divider />
         <el-form-item label="当前 Agent">
@@ -328,14 +285,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         </el-form-item>
         <el-form-item label="userId">
           <el-input v-model="store.userId" placeholder="u1" />
-          <div class="t-faint" style="margin-top:6px">会话业务 userId（body），与 OIDC sub 独立</div>
+          <div class="t-faint" style="margin-top:6px">会话业务 userId（body）</div>
         </el-form-item>
         <el-form-item label="sessionId">
           <el-input v-model="store.sessionId" placeholder="agt_ui_demo1" />
           <div class="t-faint" style="margin-top:6px">需匹配 <span class="mono">[A-Za-z0-9_-]{1,128}</span></div>
         </el-form-item>
         <el-alert type="info" :closable="false" show-icon>
-          token / 密钥仅保存在本机 localStorage。默认不发送 X-User-Id / X-User-Roles 自报头。
+          密钥仅保存在本机 localStorage。
         </el-alert>
       </el-form>
     </el-drawer>
